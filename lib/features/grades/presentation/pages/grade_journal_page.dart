@@ -2,196 +2,859 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/mock/mock_data.dart';
 import '../../../../shared/theme/app_theme.dart';
 
+// ── Мокові заняття для журналу ────────────────────────────────────────────────
+const _mockLessons = [
+  {'code': 'Л 1/1',  'type': 'ЛЕКЦІЯ',           'date': '07.01.2026', 'topic': 'Мобільні пристрої та платформи',               'maxScore': null},
+  {'code': 'ГЗ 1/2', 'type': 'ГРУПОВЕ ЗАНЯТТЯ',   'date': '09.01.2026', 'topic': 'Введення у розробку ПЗ під ОС Android',        'maxScore': 2.0},
+  {'code': 'ГЗ 1/3', 'type': 'ГРУПОВЕ ЗАНЯТТЯ',   'date': '10.01.2026', 'topic': 'Особливості проєкту в Android Studio',         'maxScore': 2.0},
+  {'code': 'ПЗ 1/4', 'type': 'ПРАКТИЧНЕ ЗАНЯТТЯ', 'date': '13.01.2026', 'topic': 'Розробка мобільного додатку Калькулятор',      'maxScore': null},
+  {'code': 'ГЗ 1/5', 'type': 'ГРУПОВЕ ЗАНЯТТЯ',   'date': '14.01.2026', 'topic': 'Основи Flutter',                               'maxScore': 2.0},
+];
+
+// Бали курсантів
+final _mockScores = <String, List<double?>> {
+  'Атабаєв Олексій':   [null, 1.75, 2.0,  null, 1.5],
+  'Ващик Олександр':   [null, 1.5,  1.25, 5.5,  1.75],
+  'Войтенко Андрій':   [null, 2.0,  1.5,  1.0,  1.5],
+  'Гупало Ярослав':    [null, 0.75, 1.5,  4.0,  1.75],
+  'Гур\'янов Михайло': [null, 1.25, 1.75, 2.0,  1.5],
+  'Дмитренко Марія':   [null, 2.0,  2.0,  3.0,  1.25],
+  'Дрига Микола':      [null, 1.75, 1.5,  4.0,  1.75],
+  'Дубовик Владислав': [null, 1.75, 1.75, 6.0,  2.0],
+};
+
+double _total(List<double?> scores) =>
+    scores.fold(0.0, (sum, s) => sum + (s ?? 0.0));
+
 class GradeJournalPage extends ConsumerStatefulWidget {
   final String disciplineId;
-  const GradeJournalPage({super.key, required this.disciplineId});
+  final String? groupName;
+  final String? semesterId;
+  const GradeJournalPage({
+    super.key,
+    required this.disciplineId,
+    this.groupName,
+    this.semesterId,
+  });
 
   @override
   ConsumerState<GradeJournalPage> createState() => _GradeJournalPageState();
 }
 
-class _GradeJournalPageState extends ConsumerState<GradeJournalPage> {
-  int _selectedLessonId = 1;
-  late Map<int, MockGrade> _grades;
+class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tab;
+  late MockDiscipline? _discipline;
+  late Map<String, List<double?>> _scores;
 
   @override
   void initState() {
     super.initState();
-    final list = MockDataProvider.gradesForLesson(_selectedLessonId);
-    _grades = {for (final g in list) g.cadetId: g};
+    _tab = TabController(length: 3, vsync: this);
+    final id = int.tryParse(widget.disciplineId) ?? 0;
+    _discipline = MockDataProvider.disciplineById(id);
+    // Копія для редагування
+    _scores = _mockScores.map((k, v) => MapEntry(k, List<double?>.from(v)));
   }
 
-  void _selectLesson(int id) {
-    setState(() {
-      _selectedLessonId = id;
-      final list = MockDataProvider.gradesForLesson(id);
-      _grades = {for (final g in list) g.cadetId: g};
-    });
-  }
+  @override
+  void dispose() { _tab.dispose(); super.dispose(); }
 
-  void _updateGrade(int cadetId, {int? score, String? status}) {
-    setState(() {
-      final existing = _grades[cadetId] ??
-          MockGrade(cadetId: cadetId);
-      _grades[cadetId] = MockGrade(
-        cadetId: cadetId,
-        score: score ?? existing.score,
-        status: status ?? existing.status,
-        comment: existing.comment,
-      );
-    });
-  }
-
-  int get _presentCount =>
-      _grades.values.where((g) => g.status == 'present').length;
-
-  double get _avgScore {
-    final scored =
-        _grades.values.where((g) => g.score != null).toList();
-    if (scored.isEmpty) return 0;
-    return scored.map((g) => g.score!).reduce((a, b) => a + b) /
-        scored.length;
+  Color _scoreColor(double total) {
+    final pct = total / 20 * 100;
+    if (pct >= 75) return const Color(0xFF4ADE80);
+    if (pct >= 60) return const Color(0xFFFBBF24);
+    return const Color(0xFFF87171);
   }
 
   @override
   Widget build(BuildContext context) {
-    final discipline = MockDataProvider.disciplines
-        .firstWhere((d) => d.id.toString() == widget.disciplineId,
-            orElse: () => MockDataProvider.disciplines.first);
-    final lessons = MockDataProvider.lessons
-        .where((l) => l.disciplineName == discipline.shortName)
-        .toList();
-
+    final disc = _discipline;
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(discipline.shortName ?? 'Журнал',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text('Журнал • Група 221',
-                style: const TextStyle(
-                    fontSize: 11, color: AppTheme.textMid)),
+            Text(
+              disc != null
+                  ? '${disc.shortName} - ${widget.groupName ?? 'Журнал'}'
+                  : 'Журнал',
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const Text('Електронний журнал успішності',
+                style: TextStyle(fontSize: 11, color: AppTheme.textMid)),
           ],
         ),
-        actions: [
-          // Stats chip
-          Container(
-            margin: const EdgeInsets.only(right: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(20),
+        // Прогрес-бар зверху (зелений)
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(6),
+          child: Container(
+            height: 6,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF4ADE80), Color(0xFF16A34A)],
+              ),
             ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.people, size: 14, color: AppTheme.textMid),
-              const SizedBox(width: 4),
-              Text('$_presentCount/${MockDataProvider.cadets.length}',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600)),
-            ]),
           ),
+        ),
+        actions: [
+          // Оновити
+          TextButton.icon(
+            onPressed: () {},
+            icon: const Icon(Icons.refresh, size: 16,
+                color: AppTheme.textMid),
+            label: const Text('Оновити',
+                style: TextStyle(
+                    fontSize: 12, color: AppTheme.textMid)),
+          ),
+          // Створити з РПНД
+          OutlinedButton.icon(
+            onPressed: () => _showRpndDialog(context),
+            icon: const Icon(Icons.description_outlined,
+                size: 14, color: AppTheme.textMid),
+            label: const Text('Створити з РПНД',
+                style: TextStyle(
+                    fontSize: 11, color: AppTheme.textMid)),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              side: const BorderSide(color: AppTheme.border),
+            ),
+          ),
+          const SizedBox(width: 6),
+          // + Додати заняття
+          ElevatedButton.icon(
+            onPressed: () => _showAddLessonDialog(context),
+            icon: const Icon(Icons.add, size: 14,
+                color: Colors.white),
+            label: const Text('Додати заняття',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6)),
+            ),
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: Column(
         children: [
-          // Summary bar
+          // Tabs
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: Colors.white,
-            child: Row(children: [
-              _SummaryChip(
-                  label: 'Присутні',
-                  value: '$_presentCount',
-                  color: const Color(0xFF059669)),
-              const SizedBox(width: 8),
-              _SummaryChip(
-                  label: 'Середній бал',
-                  value: _avgScore > 0
-                      ? _avgScore.toStringAsFixed(1)
-                      : '—',
-                  color: AppTheme.secondary),
-              const SizedBox(width: 8),
-              _SummaryChip(
-                  label: 'Відсутні',
-                  value: '${_grades.values.where((g) => g.status == 'absent').length}',
-                  color: const Color(0xFFEF4444)),
+            child: TabBar(
+              controller: _tab,
+              indicatorColor: AppTheme.primary,
+              labelColor: AppTheme.primary,
+              unselectedLabelColor: AppTheme.textMid,
+              labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+              unselectedLabelStyle: const TextStyle(fontSize: 10),
+              tabs: [
+                _TabItem(icon: Icons.bar_chart, label: 'Журнал'),
+                _TabItem(icon: Icons.menu_book_outlined, label: 'Заняття'),
+                _TabItem(icon: Icons.link, label: 'Посилання'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tab,
+              children: [
+                _GradesTab(scores: _scores),
+                _LessonsTab(onAdd: () => _showAddLessonDialog(context)),
+                _LinksTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRpndDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.all(24),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Expanded(
+                  child: Text('Створити заняття з РПНД',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                          color: AppTheme.textDark)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              const Text(
+                'Завантажте документ РПНД (Робоча програма навчальної дисципліни) у форматі DOCX. Система автоматично розпізнає модулі та заняття з таблиці.',
+                style: TextStyle(
+                    fontSize: 13, color: AppTheme.textDark),
+              ),
+              const SizedBox(height: 16),
+              // Drop zone
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.border,
+                      style: BorderStyle.solid,
+                      width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.upload_file,
+                        size: 48,
+                        color: Colors.grey.shade400),
+                    const SizedBox(height: 12),
+                    RichText(
+                      textAlign: TextAlign.center,
+                      text: const TextSpan(
+                        text: 'Перетягніть файл сюди або ',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textDark),
+                        children: [
+                          TextSpan(
+                            text: 'оберіть файл',
+                            style: TextStyle(
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text('Підтримується: DOCX (макс. 10 МБ)',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textMid)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Що буде розпізнано:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14)),
+                    const SizedBox(height: 8),
+                    ...['Модулі курсу',
+                      'Типи занять (лекції, практичні, лабораторні тощо)',
+                      'Теми занять',
+                      'Кількість годин']
+                        .map((item) => Padding(
+                              padding:
+                                  const EdgeInsets.only(bottom: 4),
+                              child: Row(children: [
+                                const Text('• ',
+                                    style: TextStyle(
+                                        color: AppTheme.textMid)),
+                                Text(item,
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppTheme.textDark)),
+                              ]),
+                            )),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF374151),
+                      foregroundColor: Colors.white,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Скасувати'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.upload_file,
+                        size: 16, color: Colors.white),
+                    label: const Text('Завантажити'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAddLessonDialog(BuildContext context) {
+    String _type = 'Лекція';
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          insetPadding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Expanded(
+                    child: Text('Додати нове заняття',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                            color: AppTheme.textDark)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                // Вид + Дата
+                Row(children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Вид заняття',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.textMid)),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            border:
+                                Border.all(color: AppTheme.border),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: DropdownButton<String>(
+                            value: _type,
+                            isExpanded: true,
+                            underline: const SizedBox(),
+                            items: ['Лекція', 'Практичне заняття',
+                              'Групове заняття', 'Лабораторна робота']
+                                .map((t) => DropdownMenuItem(
+                                    value: t, child: Text(t)))
+                                .toList(),
+                            onChanged: (v) =>
+                                setDialogState(() => _type = v!),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Дата заняття',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.textMid)),
+                        const SizedBox(height: 6),
+                        TextField(
+                          decoration: InputDecoration(
+                            hintText: 'дд.мм.рррр',
+                            border: OutlineInputBorder(
+                                borderRadius:
+                                    BorderRadius.circular(8)),
+                            contentPadding:
+                                const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                _DialogField(label: 'Номер заняття *',
+                    hint: 'Введіть номер заняття: 1/1 | 2/2 | 4/3'),
+                const SizedBox(height: 14),
+                _DialogField(
+                  label: 'Найменування заняття *',
+                  hint: 'Введіть найменування заняття',
+                  maxLines: 4,
+                ),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(
+                    child: _DialogField(
+                        label: 'Максимальний бал *',
+                        hint: '5',
+                        keyboardType: TextInputType.number),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _DialogField(
+                        label: 'Пара',
+                        hint: '1',
+                        keyboardType: TextInputType.number),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                _DialogField(label: 'Аудиторія',
+                    hint: 'Номер аудиторії'),
+                const SizedBox(height: 20),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('Скасувати'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('Створити',
+                          style:
+                              TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Журнал оцінок — горизонтальна таблиця ─────────────────────────────────────
+
+class _GradesTab extends StatelessWidget {
+  final Map<String, List<double?>> scores;
+  const _GradesTab({required this.scores});
+
+  Color _scoreColor(double total) {
+    final pct = total / 20 * 100;
+    if (pct >= 75) return const Color(0xFF4ADE80);
+    if (pct >= 60) return const Color(0xFFFBBF24);
+    return const Color(0xFFF87171);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cadets = scores.keys.toList();
+    return SingleChildScrollView(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Table(
+          border: TableBorder.all(color: AppTheme.border, width: 0.5),
+          defaultColumnWidth: const FixedColumnWidth(70),
+          columnWidths: const {
+            0: FixedColumnWidth(36),
+            1: FixedColumnWidth(160),
+            2: FixedColumnWidth(80),
+          },
+          children: [
+            // Header row 1 — коди занять
+            TableRow(
+              decoration: BoxDecoration(color: AppTheme.surface),
+              children: [
+                _HCell('№'),
+                _HCell('ПІБ'),
+                _HCell('бали'),
+                ..._mockLessons.map((l) => _LessonHeader(l)),
+              ],
+            ),
+            // Header row 2 — дати
+            TableRow(
+              decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
+              children: [
+                _HCell(''),
+                _HCell(''),
+                _HCell(''),
+                ..._mockLessons.map((l) => Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 4, horizontal: 2),
+                      child: Text(l['date'] as String,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 9,
+                              color: AppTheme.textMid)),
+                    )),
+              ],
+            ),
+            // Data rows
+            ...cadets.asMap().entries.map((entry) {
+              final i = entry.key;
+              final name = entry.value;
+              final cadetScores = scores[name]!;
+              final total = cadetScores.fold(
+                  0.0, (sum, s) => sum + (s ?? 0.0));
+              final pct = (total / 20 * 100).round();
+              return TableRow(
+                children: [
+                  // №
+                  Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Text('${i + 1}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textMid)),
+                  ),
+                  // ПІБ
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 6),
+                    child: Text(name,
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textDark)),
+                  ),
+                  // Бали
+                  Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _scoreColor(total),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '$total ($pct%)',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  // Оцінки по заняттях
+                  ...cadetScores.map((s) => Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Text(
+                          s != null ? s.toString() : '',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textDark),
+                        ),
+                      )),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LessonHeader extends StatelessWidget {
+  final Map<String, dynamic> lesson;
+  const _LessonHeader(this.lesson);
+
+  Color get _color {
+    switch (lesson['type'] as String) {
+      case 'ЛЕКЦІЯ':           return const Color(0xFF93C5FD);
+      case 'ГРУПОВЕ ЗАНЯТТЯ':  return const Color(0xFF86EFAC);
+      case 'ПРАКТИЧНЕ ЗАНЯТТЯ':return const Color(0xFFFDE68A);
+      default:                 return AppTheme.border;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        decoration: BoxDecoration(
+          color: _color,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(lesson['code'] as String,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 10, fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+}
+
+Widget _HCell(String text) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Text(text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textMid)),
+    );
+
+// ── Управління заняттями ──────────────────────────────────────────────────────
+
+class _LessonsTab extends StatelessWidget {
+  final VoidCallback onAdd;
+  const _LessonsTab({required this.onAdd});
+
+  Color _typeColor(String type) {
+    switch (type) {
+      case 'ЛЕКЦІЯ':           return const Color(0xFF93C5FD);
+      case 'ГРУПОВЕ ЗАНЯТТЯ':  return const Color(0xFF86EFAC);
+      case 'ПРАКТИЧНЕ ЗАНЯТТЯ':return const Color(0xFFFDE68A);
+      default:                 return AppTheme.border;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Text('Заняття',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: AppTheme.textDark)),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Text(
+                  'Всього: ${_mockLessons.length}',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppTheme.textMid)),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          // Заголовок таблиці
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 12, vertical: 8),
+            color: AppTheme.surface,
+            child: const Row(children: [
+              SizedBox(width: 90,
+                  child: Text('Дата',
+                      style: TextStyle(fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textMid))),
+              SizedBox(width: 90,
+                  child: Text('Тип',
+                      style: TextStyle(fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textMid))),
+              SizedBox(width: 50,
+                  child: Text('Назва',
+                      style: TextStyle(fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textMid))),
+              Expanded(
+                  child: Text('Тема заняття',
+                      style: TextStyle(fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textMid))),
+              SizedBox(width: 50,
+                  child: Text('Макс.бал',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textMid))),
+              SizedBox(width: 30),
             ]),
           ),
           const Divider(height: 1),
-
-          // Lesson selector
-          if (lessons.isNotEmpty)
-            Container(
-              height: 52,
-              color: AppTheme.surface,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                itemCount: lessons.length,
-                itemBuilder: (context, i) {
-                  final l = lessons[i];
-                  final isSelected = _selectedLessonId == l.id;
-                  return GestureDetector(
-                    onTap: () => _selectLesson(l.id),
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppTheme.primary : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: isSelected
-                                ? AppTheme.primary
-                                : AppTheme.border),
-                      ),
-                      child: Text(
-                        'Зан. ${l.lessonNumber}',
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: isSelected
-                                ? Colors.white
-                                : AppTheme.textDark),
+          ..._mockLessons.map((l) => Column(children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  child: Row(children: [
+                    SizedBox(
+                      width: 90,
+                      child: Text(l['date'] as String,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textDark)),
+                    ),
+                    SizedBox(
+                      width: 90,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _typeColor(l['type'] as String),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(l['type'] as String,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600)),
                       ),
                     ),
-                  );
-                },
-              ),
-            )
-          else
-            Container(
-              height: 52,
-              color: AppTheme.surface,
-              child: const Center(
-                  child: Text('Заняття не знайдено',
-                      style: TextStyle(color: AppTheme.textMid))),
-            ),
+                    SizedBox(
+                      width: 50,
+                      child: Text(l['code'] as String,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textDark)),
+                    ),
+                    Expanded(
+                      child: Text(l['topic'] as String,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textDark),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    SizedBox(
+                      width: 50,
+                      child: Text(
+                        l['maxScore'] != null
+                            ? '${l['maxScore']} б.'
+                            : '—',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textMid),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 30,
+                      child: IconButton(
+                        icon: const Icon(Icons.edit_outlined,
+                            size: 16, color: AppTheme.primary),
+                        onPressed: () {},
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
+                  ]),
+                ),
+                const Divider(height: 1),
+              ])),
+        ],
+      ),
+    );
+  }
+}
 
-          const Divider(height: 1),
+// ── Корисні посилання ─────────────────────────────────────────────────────────
 
-          // Cadets list
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: MockDataProvider.cadets.length,
-              itemBuilder: (context, i) {
-                final cadet = MockDataProvider.cadets[i];
-                final grade = _grades[cadet.id];
-                return _CadetRow(
-                  cadet: cadet,
-                  grade: grade,
-                  onStatusChanged: (status) =>
-                      _updateGrade(cadet.id, status: status),
-                  onScoreChanged: (score) =>
-                      _updateGrade(cadet.id, score: score),
-                );
-              },
+class _LinksTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _LinkBadge(
+              icon: Icons.folder,
+              label: 'Drive',
+              bg: const Color(0xFFE8F5E9),
+              fg: const Color(0xFF2E7D32)),
+          _LinkBadge(
+              icon: Icons.videocam,
+              label: 'Meet',
+              bg: const Color(0xFFE3F2FD),
+              fg: const Color(0xFF1565C0)),
+          _LinkBadge(
+              icon: Icons.school,
+              label: 'Moodle',
+              bg: const Color(0xFFFFF3E0),
+              fg: const Color(0xFFE65100)),
+          // Додати месенджер
+          OutlinedButton.icon(
+            onPressed: () {},
+            icon: const Icon(Icons.link, size: 14),
+            label: const Text('Додати Месенджер',
+                style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.textMid,
+              side: const BorderSide(color: AppTheme.border),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
             ),
           ),
         ],
@@ -200,235 +863,98 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage> {
   }
 }
 
-class _SummaryChip extends StatelessWidget {
+class _LinkBadge extends StatelessWidget {
+  final IconData icon;
   final String label;
-  final String value;
-  final Color color;
-  const _SummaryChip(
-      {required this.label, required this.value, required this.color});
+  final Color bg;
+  final Color fg;
+  const _LinkBadge(
+      {required this.icon,
+      required this.label,
+      required this.bg,
+      required this.fg});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(value,
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: color)),
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: fg.withOpacity(0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, color: fg, size: 14),
+          const SizedBox(width: 6),
           Text(label,
-              style: const TextStyle(
-                  fontSize: 10, color: AppTheme.textMid)),
-        ],
+              style: TextStyle(
+                  color: fg,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13)),
+        ]),
       ),
+      IconButton(
+        icon: const Icon(Icons.edit_outlined,
+            size: 14, color: AppTheme.textMid),
+        onPressed: () {},
+        padding: const EdgeInsets.all(4),
+        constraints: const BoxConstraints(),
+      ),
+    ]);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+class _TabItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _TabItem({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tab(
+      icon: Icon(icon, size: 16),
+      text: label,
+      iconMargin: const EdgeInsets.only(bottom: 2),
     );
   }
 }
 
-class _CadetRow extends StatelessWidget {
-  final MockCadet cadet;
-  final MockGrade? grade;
-  final ValueChanged<String?> onStatusChanged;
-  final ValueChanged<int?> onScoreChanged;
-
-  const _CadetRow({
-    required this.cadet,
-    this.grade,
-    required this.onStatusChanged,
-    required this.onScoreChanged,
+class _DialogField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final int maxLines;
+  final TextInputType? keyboardType;
+  const _DialogField({
+    required this.label,
+    required this.hint,
+    this.maxLines = 1,
+    this.keyboardType,
   });
 
-  Color get _statusColor {
-    switch (grade?.status) {
-      case 'present': return const Color(0xFF059669);
-      case 'absent': return const Color(0xFFEF4444);
-      case 'late': return const Color(0xFFF97316);
-      default: return AppTheme.textLight;
-    }
-  }
-
-  IconData get _statusIcon {
-    switch (grade?.status) {
-      case 'present': return Icons.check_circle;
-      case 'absent': return Icons.cancel;
-      case 'late': return Icons.watch_later;
-      default: return Icons.radio_button_unchecked;
-    }
-  }
-
-  Color get _scoreColor {
-    final s = grade?.score;
-    if (s == null) return AppTheme.textLight;
-    if (s >= 90) return const Color(0xFF059669);
-    if (s >= 75) return AppTheme.secondary;
-    if (s >= 60) return const Color(0xFFF97316);
-    return const Color(0xFFEF4444);
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(
-        children: [
-          // Avatar
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: AppTheme.secondary.withOpacity(0.1),
-            child: Text(cadet.initial,
-                style: const TextStyle(
-                    color: AppTheme.secondary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 13, color: AppTheme.textMid)),
+        const SizedBox(height: 6),
+        TextField(
+          maxLines: maxLines,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            hintText: hint,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8)),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12, vertical: 10),
           ),
-          const SizedBox(width: 10),
-
-          // Name
-          Expanded(
-            child: Text(
-              cadet.fullName,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                  color: AppTheme.textDark),
-            ),
-          ),
-
-          // Status popup
-          PopupMenuButton<String>(
-            onSelected: onStatusChanged,
-            itemBuilder: (_) => [
-              _statusMenuItem('present', Icons.check_circle,
-                  const Color(0xFF059669), 'Присутній'),
-              _statusMenuItem('absent', Icons.cancel,
-                  const Color(0xFFEF4444), 'Відсутній'),
-              _statusMenuItem('late', Icons.watch_later,
-                  const Color(0xFFF97316), 'Запізнився'),
-            ],
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: _statusColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(_statusIcon, color: _statusColor, size: 22),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Score
-          _ScoreInput(
-            score: grade?.score,
-            color: _scoreColor,
-            onChanged: onScoreChanged,
-          ),
-        ],
-      ),
-    );
-  }
-
-  PopupMenuItem<String> _statusMenuItem(
-      String value, IconData icon, Color color, String label) {
-    return PopupMenuItem(
-      value: value,
-      child: Row(children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(width: 10),
-        Text(label),
-      ]),
-    );
-  }
-}
-
-class _ScoreInput extends StatefulWidget {
-  final int? score;
-  final Color color;
-  final ValueChanged<int?> onChanged;
-  const _ScoreInput(
-      {this.score, required this.color, required this.onChanged});
-
-  @override
-  State<_ScoreInput> createState() => _ScoreInputState();
-}
-
-class _ScoreInputState extends State<_ScoreInput> {
-  late TextEditingController _ctrl;
-  bool _editing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.score?.toString() ?? '');
-  }
-
-  @override
-  void didUpdateWidget(_ScoreInput old) {
-    super.didUpdateWidget(old);
-    if (!_editing) _ctrl.text = widget.score?.toString() ?? '';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 56,
-      child: TextField(
-        controller: _ctrl,
-        keyboardType: TextInputType.number,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-            color: widget.color),
-        decoration: InputDecoration(
-          hintText: '—',
-          hintStyle: const TextStyle(
-              color: AppTheme.textLight, fontSize: 15),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          filled: true,
-          fillColor: widget.score != null
-              ? widget.color.withOpacity(0.06)
-              : AppTheme.surface,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide:
-                  BorderSide(color: widget.color.withOpacity(0.3))),
-          enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                  color: widget.score != null
-                      ? widget.color.withOpacity(0.3)
-                      : AppTheme.border)),
-          focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: widget.color, width: 2)),
         ),
-        onTap: () => setState(() => _editing = true),
-        onSubmitted: (val) {
-          setState(() => _editing = false);
-          final v = int.tryParse(val);
-          if (v == null || (v >= 0 && v <= 100)) widget.onChanged(v);
-        },
-        onEditingComplete: () => setState(() => _editing = false),
-      ),
+      ],
     );
   }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
 }

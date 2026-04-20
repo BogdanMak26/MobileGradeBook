@@ -32,16 +32,24 @@ class MockDiscipline {
 
 class MockLesson {
   final int id;
-  final String disciplineName;
+  final int disciplineId;      // ← прив'язка до дисципліни через ID
+  final String disciplineName; // ← для відображення в розкладі
   final String topic;
-  final String type; // lecture / practice / seminar / lab
+  final String type;
   final DateTime date;
   final int lessonNumber;
   final String group;
 
-  const MockLesson({required this.id, required this.disciplineName,
-    required this.topic, required this.type, required this.date,
-    required this.lessonNumber, required this.group});
+  const MockLesson({
+    required this.id,
+    required this.disciplineId,
+    required this.disciplineName,
+    required this.topic,
+    required this.type,
+    required this.date,
+    required this.lessonNumber,
+    required this.group,
+  });
 }
 
 class MockCadet {
@@ -67,7 +75,6 @@ class MockGrade {
 }
 
 class MockDataProvider {
-  // Поточний користувач — змінюй для тестування різних ролей
   static const MockUser currentUser = MockUser(
     id: '1', name: 'Богдан', surname: 'Макаренко',
     email: 'makarenko.b@viti.edu.ua', role: 'INSTRUCTOR',
@@ -98,41 +105,93 @@ class MockDataProvider {
       shortName: 'ПМ', teacherName: 'Коваль О.', journalCount: 1),
   ];
 
-  static final List<MockCadet> cadets = [
-    const MockCadet(id: 1, name: 'Олексій', surname: 'Сачук', group: '221'),
-    const MockCadet(id: 2, name: 'Дмитро', surname: 'Бондаренко', group: '221'),
-    const MockCadet(id: 3, name: 'Іван', surname: 'Кравченко', group: '221'),
-    const MockCadet(id: 4, name: 'Андрій', surname: 'Мельник', group: '221'),
-    const MockCadet(id: 5, name: 'Сергій', surname: 'Гриценко', group: '221'),
-    const MockCadet(id: 6, name: 'Тарас', surname: 'Шевченко', group: '221'),
-    const MockCadet(id: 7, name: 'Микола', surname: 'Лисенко', group: '221'),
-    const MockCadet(id: 8, name: 'Василь', surname: 'Романенко', group: '221'),
+  // ── Заняття прив'язані до disciplineId ──────────────────────────────────
+  static List<MockLesson> get lessons => [
+    // ЗІТС (id: 1) — 4 заняття
+    MockLesson(id: 1,  disciplineId: 1, disciplineName: 'ЗІТС',
+      topic: 'Вступ. Основи захисту інформації', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 14)),
+      lessonNumber: 1, group: '221'),
+    MockLesson(id: 2,  disciplineId: 1, disciplineName: 'ЗІТС',
+      topic: 'Протоколи шифрування TLS/SSL', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 7)),
+      lessonNumber: 2, group: '221'),
+    MockLesson(id: 3,  disciplineId: 1, disciplineName: 'ЗІТС',
+      topic: 'Практична робота №1 — аналіз трафіку', type: 'practice',
+      date: DateTime.now().subtract(const Duration(days: 3)),
+      lessonNumber: 3, group: '221'),
+    MockLesson(id: 4,  disciplineId: 1, disciplineName: 'ЗІТС',
+      topic: 'Семінар: сучасні загрози ІБ', type: 'seminar',
+      date: DateTime.now(),
+      lessonNumber: 4, group: '221'),
+
+    // КМТ (id: 2) — 3 заняття
+    MockLesson(id: 5,  disciplineId: 2, disciplineName: 'КМТ',
+      topic: 'Модель OSI. Рівні мережі', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 12)),
+      lessonNumber: 1, group: '221'),
+    MockLesson(id: 6,  disciplineId: 2, disciplineName: 'КМТ',
+      topic: 'Маршрутизація в IP-мережах', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 5)),
+      lessonNumber: 2, group: '221'),
+    MockLesson(id: 7,  disciplineId: 2, disciplineName: 'КМТ',
+      topic: 'Лабораторна: налаштування VLAN', type: 'lab',
+      date: DateTime.now().add(const Duration(days: 1)),
+      lessonNumber: 3, group: '221'),
+
+    // КЗІ (id: 3) — 2 заняття
+    MockLesson(id: 8,  disciplineId: 3, disciplineName: 'КЗІ',
+      topic: 'Симетричне шифрування. AES', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 10)),
+      lessonNumber: 1, group: '221'),
+    MockLesson(id: 9,  disciplineId: 3, disciplineName: 'КЗІ',
+      topic: 'Асиметричне шифрування. RSA', type: 'seminar',
+      date: DateTime.now().add(const Duration(days: 2)),
+      lessonNumber: 2, group: '221'),
+
+    // ОКБ (id: 4) — 3 заняття
+    MockLesson(id: 10, disciplineId: 4, disciplineName: 'ОКБ',
+      topic: 'Вступ до кібербезпеки', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 9)),
+      lessonNumber: 1, group: '221'),
+    MockLesson(id: 11, disciplineId: 4, disciplineName: 'ОКБ',
+      topic: 'Вразливості та атаки', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 2)),
+      lessonNumber: 2, group: '221'),
+    MockLesson(id: 12, disciplineId: 4, disciplineName: 'ОКБ',
+      topic: 'Лабораторна робота №2', type: 'lab',
+      date: DateTime.now().add(const Duration(days: 3)),
+      lessonNumber: 3, group: '221'),
+
+    // ПМ (id: 5) — 2 заняття
+    MockLesson(id: 13, disciplineId: 5, disciplineName: 'ПМ',
+      topic: 'Архітектура AVR мікроконтролерів', type: 'lecture',
+      date: DateTime.now().subtract(const Duration(days: 6)),
+      lessonNumber: 1, group: '221'),
+    MockLesson(id: 14, disciplineId: 5, disciplineName: 'ПМ',
+      topic: 'Програмування портів вводу/виводу', type: 'lab',
+      date: DateTime.now().add(const Duration(days: 4)),
+      lessonNumber: 2, group: '221'),
   ];
 
-  static List<MockLesson> get lessons => [
-    MockLesson(id: 1, disciplineName: 'ЗІТС',
-      topic: 'Протоколи шифрування TLS/SSL', type: 'lecture',
-      date: DateTime.now(), lessonNumber: 1, group: '221'),
-    MockLesson(id: 2, disciplineName: 'ЗІТС',
-      topic: 'Практична робота №1', type: 'practice',
-      date: DateTime.now().add(const Duration(hours: 2)),
-      lessonNumber: 2, group: '221'),
-    MockLesson(id: 3, disciplineName: 'КМТ',
-      topic: 'Маршрутизація в IP-мережах', type: 'lecture',
-      date: DateTime.now().add(const Duration(days: 1)),
-      lessonNumber: 1, group: '221'),
-    MockLesson(id: 4, disciplineName: 'КЗІ',
-      topic: 'Симетричне шифрування', type: 'seminar',
-      date: DateTime.now().add(const Duration(days: 1, hours: 2)),
-      lessonNumber: 1, group: '221'),
-    MockLesson(id: 5, disciplineName: 'ОКБ',
-      topic: 'Лабораторна робота №2', type: 'lab',
-      date: DateTime.now().add(const Duration(days: 2)),
-      lessonNumber: 3, group: '221'),
-    MockLesson(id: 6, disciplineName: 'ПМ',
-      topic: 'Архітектура AVR', type: 'lecture',
-      date: DateTime.now().add(const Duration(days: 3)),
-      lessonNumber: 1, group: '221'),
+  // ── Отримати заняття за disciplineId ────────────────────────────────────
+  static List<MockLesson> lessonsForDiscipline(int disciplineId) =>
+      lessons.where((l) => l.disciplineId == disciplineId).toList()
+        ..sort((a, b) => a.lessonNumber.compareTo(b.lessonNumber));
+
+  // ── Отримати дисципліну за ID ────────────────────────────────────────────
+  static MockDiscipline? disciplineById(int id) =>
+      disciplines.where((d) => d.id == id).firstOrNull;
+
+  static final List<MockCadet> cadets = [
+    const MockCadet(id: 1, name: 'Олексій',  surname: 'Сачук',       group: '221'),
+    const MockCadet(id: 2, name: 'Дмитро',   surname: 'Бондаренко',  group: '221'),
+    const MockCadet(id: 3, name: 'Іван',      surname: 'Кравченко',   group: '221'),
+    const MockCadet(id: 4, name: 'Андрій',    surname: 'Мельник',     group: '221'),
+    const MockCadet(id: 5, name: 'Сергій',    surname: 'Гриценко',    group: '221'),
+    const MockCadet(id: 6, name: 'Тарас',     surname: 'Шевченко',    group: '221'),
+    const MockCadet(id: 7, name: 'Микола',    surname: 'Лисенко',     group: '221'),
+    const MockCadet(id: 8, name: 'Василь',    surname: 'Романенко',   group: '221'),
   ];
 
   static List<MockGrade> gradesForLesson(int lessonId) => [
@@ -147,11 +206,13 @@ class MockDataProvider {
   ];
 
   static final List<Map<String, dynamic>> cadetGrades = [
-    {'discipline': 'ЗІТС', 'lesson': 'Лекція 1', 'score': 95, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 7))},
-    {'discipline': 'ЗІТС', 'lesson': 'Практика 1', 'score': 88, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 5))},
-    {'discipline': 'КМТ', 'lesson': 'Лекція 1', 'score': 72, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 4))},
-    {'discipline': 'КМТ', 'lesson': 'Семінар 1', 'score': null, 'status': 'absent', 'date': DateTime.now().subtract(const Duration(days: 3))},
-    {'discipline': 'КЗІ', 'lesson': 'Лекція 1', 'score': 91, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 2))},
-    {'discipline': 'ОКБ', 'lesson': 'Лаб. 1', 'score': 78, 'status': 'late', 'date': DateTime.now().subtract(const Duration(days: 1))},
+    {'discipline': 'ЗІТС', 'lesson': 'Лекція 1', 'score': 95, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 14))},
+    {'discipline': 'ЗІТС', 'lesson': 'Лекція 2', 'score': 88, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 7))},
+    {'discipline': 'ЗІТС', 'lesson': 'Практика 1', 'score': 91, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 3))},
+    {'discipline': 'КМТ',  'lesson': 'Лекція 1', 'score': 72, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 12))},
+    {'discipline': 'КМТ',  'lesson': 'Лекція 2', 'score': null, 'status': 'absent', 'date': DateTime.now().subtract(const Duration(days: 5))},
+    {'discipline': 'КЗІ',  'lesson': 'Лекція 1', 'score': 85, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 10))},
+    {'discipline': 'ОКБ',  'lesson': 'Лекція 1', 'score': 78, 'status': 'late',    'date': DateTime.now().subtract(const Duration(days: 9))},
+    {'discipline': 'ОКБ',  'lesson': 'Лекція 2', 'score': 82, 'status': 'present', 'date': DateTime.now().subtract(const Duration(days: 2))},
   ];
 }

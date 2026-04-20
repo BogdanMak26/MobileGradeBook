@@ -28,7 +28,7 @@ dependencies:
   path: ^1.9.0
 
   # Auth — OAuth2 PKCE + Keycloak
-  flutter_appauth: ^7.0.1
+  #flutter_appauth: ^7.0.1
   flutter_secure_storage: ^9.2.4
 
   # Network monitoring
