@@ -1,6 +1,7 @@
 // lib/features/grades/presentation/pages/grade_journal_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/mock/mock_data.dart';
@@ -34,11 +35,13 @@ class GradeJournalPage extends ConsumerStatefulWidget {
   final String disciplineId;
   final String? groupName;
   final String? semesterId;
+  final bool readOnly;
   const GradeJournalPage({
     super.key,
     required this.disciplineId,
     this.groupName,
     this.semesterId,
+    this.readOnly = false,
   });
 
   @override
@@ -112,7 +115,8 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                 style: TextStyle(
                     fontSize: 12, color: AppTheme.textMid)),
           ),
-          // Створити з РПНД
+          // Створити з РПНД та Додати заняття — тільки для викладача
+          if (!widget.readOnly)
           OutlinedButton.icon(
             onPressed: () => _showRpndDialog(context),
             icon: const Icon(Icons.description_outlined,
@@ -129,7 +133,8 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
             ),
           ),
           const SizedBox(width: 6),
-          // + Додати заняття
+          // + Додати заняття — тільки для викладача
+          if (!widget.readOnly)
           ElevatedButton.icon(
             onPressed: () => _showAddLessonDialog(context),
             icon: const Icon(Icons.add, size: 14,
@@ -176,7 +181,10 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
               controller: _tab,
               children: [
                 _GradesTab(scores: _scores),
-                _LessonsTab(onAdd: () => _showAddLessonDialog(context)),
+                _LessonsTab(
+                  onAdd: () => _showAddLessonDialog(context),
+                  onEdit: (l) => _showEditLessonDialog(context, l),
+                ),
                 _LinksTab(),
               ],
             ),
@@ -186,10 +194,186 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
     );
   }
 
+  void _showEditLessonDialog(BuildContext context, Map<String, dynamic> lesson) {
+    final _typeMap = {
+      'ЛЕКЦІЯ': 'Лекція',
+      'ГРУПОВЕ ЗАНЯТТЯ': 'Групове заняття',
+      'ПРАКТИЧНЕ ЗАНЯТТЯ': 'Практичне заняття',
+      'ЛАБОРАТОРНА РОБОТА': 'Лабораторна робота',
+    };
+    String _type = _typeMap[lesson['type'] as String] ?? 'Лекція';
+    final _codeCtrl = TextEditingController(text: lesson['code'] as String? ?? '');
+    final _topicCtrl = TextEditingController(text: lesson['topic'] as String? ?? '');
+    final _dateCtrl = TextEditingController(text: lesson['date'] as String? ?? '');
+    final _scoreCtrl = TextEditingController(
+        text: lesson['maxScore'] != null ? '${lesson['maxScore']}' : '0');
+    final _pairCtrl = TextEditingController(text: '1');
+    final _roomCtrl = TextEditingController(text: '');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          insetPadding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Заголовок + хрестик
+                Row(children: [
+                  const Expanded(
+                    child: Text('Редагувати заняття',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                            color: AppTheme.textDark)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                // Вид заняття
+                const Text('Вид заняття',
+                    style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppTheme.border),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _type,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: ['Лекція', 'Практичне заняття',
+                      'Групове заняття', 'Лабораторна робота']
+                        .map((t) => DropdownMenuItem<String>(
+                            value: t,
+                            child: Text(t, style: const TextStyle(fontSize: 13))))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => _type = v!),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Дата заняття
+                _DialogField(
+                  label: 'Дата заняття',
+                  hint: 'дд.мм.рррр',
+                  controller: _dateCtrl,
+                ),
+                const SizedBox(height: 14),
+                // Номер заняття
+                _DialogField(
+                  label: 'Номер заняття *',
+                  hint: '1/1 | 2/2 | 4/3',
+                  controller: _codeCtrl,
+                ),
+                const SizedBox(height: 14),
+                // Тема
+                _DialogField(
+                  label: 'Найменування заняття *',
+                  hint: 'Введіть тему заняття',
+                  maxLines: 3,
+                  controller: _topicCtrl,
+                ),
+                const SizedBox(height: 14),
+                // Макс бал + Пара
+                Row(children: [
+                  Expanded(
+                    child: _DialogField(
+                      label: 'Максимальний бал *',
+                      hint: '0',
+                      controller: _scoreCtrl,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _DialogField(
+                      label: 'Пара',
+                      hint: '1',
+                      controller: _pairCtrl,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 6),
+                const Text(
+                  'Автоматично розраховується як сума максимальних балів всіх колонок',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: AppTheme.textMid,
+                      fontStyle: FontStyle.italic),
+                ),
+                const SizedBox(height: 14),
+                // Аудиторія
+                _DialogField(
+                  label: 'Аудиторія',
+                  hint: 'Номер аудиторії',
+                  controller: _roomCtrl,
+                ),
+                const Divider(height: 28),
+                // Кнопки
+                Row(children: [
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFDC2626),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Видалити'),
+                  ),
+                  const Spacer(),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Скасувати'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Оновити',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showRpndDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (_) => Dialog(
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog(
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.all(24),
@@ -209,7 +393,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
                 ),
               ]),
               const SizedBox(height: 12),
@@ -219,48 +403,79 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                     fontSize: 13, color: AppTheme.textDark),
               ),
               const SizedBox(height: 16),
-              // Drop zone
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(32),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: AppTheme.border,
-                      style: BorderStyle.solid,
-                      width: 1.5),
-                ),
-                child: Column(
-                  children: [
-                    Icon(Icons.upload_file,
-                        size: 48,
-                        color: Colors.grey.shade400),
-                    const SizedBox(height: 12),
-                    RichText(
-                      textAlign: TextAlign.center,
-                      text: const TextSpan(
-                        text: 'Перетягніть файл сюди або ',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: AppTheme.textDark),
+              // File picker zone
+              StatefulBuilder(
+                builder: (ctx2, setFileState) {
+                  String? _fileName;
+                  return GestureDetector(
+                    onTap: () async {
+                      final result = await FilePicker.platform.pickFiles(
+                        type: FileType.custom,
+                        allowedExtensions: ['docx'],
+                      );
+                      if (result != null && result.files.isNotEmpty) {
+                        setFileState(() => _fileName = result.files.first.name);
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: _fileName != null
+                                ? AppTheme.primary
+                                : AppTheme.border,
+                            width: 1.5),
+                      ),
+                      child: Column(
                         children: [
-                          TextSpan(
-                            text: 'оберіть файл',
-                            style: TextStyle(
-                                color: AppTheme.primary,
-                                fontWeight: FontWeight.w600),
-                          ),
+                          Icon(
+                            _fileName != null
+                                ? Icons.insert_drive_file
+                                : Icons.upload_file,
+                            size: 48,
+                            color: _fileName != null
+                                ? AppTheme.primary
+                                : Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          if (_fileName != null)
+                            Text(_fileName!,
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.primary),
+                                textAlign: TextAlign.center)
+                          else ...[
+                            RichText(
+                              textAlign: TextAlign.center,
+                              text: const TextSpan(
+                                text: 'Натисніть щоб ',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppTheme.textDark),
+                                children: [
+                                  TextSpan(
+                                    text: 'обрати файл',
+                                    style: TextStyle(
+                                        color: AppTheme.primary,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text('Підтримується: DOCX (макс. 10 МБ)',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.textMid)),
+                          ],
                         ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    const Text('Підтримується: DOCX (макс. 10 МБ)',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textMid)),
-                  ],
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 16),
               Container(
@@ -284,14 +499,14 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                         .map((item) => Padding(
                               padding:
                                   const EdgeInsets.only(bottom: 4),
-                              child: Row(children: [
+                              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 const Text('• ',
                                     style: TextStyle(
                                         color: AppTheme.textMid)),
-                                Text(item,
+                                Expanded(child: Text(item,
                                     style: const TextStyle(
                                         fontSize: 13,
-                                        color: AppTheme.textDark)),
+                                        color: AppTheme.textDark))),
                               ]),
                             )),
                   ],
@@ -301,7 +516,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
               Row(children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF374151),
                       foregroundColor: Colors.white,
@@ -316,7 +531,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
                     icon: const Icon(Icons.upload_file,
                         size: 16, color: Colors.white),
                     label: const Text('Завантажити'),
@@ -340,15 +555,23 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
 
   void _showAddLessonDialog(BuildContext context) {
     String _type = 'Лекція';
+    final _codeCtrl = TextEditingController();
+    final _topicCtrl = TextEditingController();
+    final _dateCtrl = TextEditingController();
+    final _scoreCtrl = TextEditingController(text: '5');
+    final _pairCtrl = TextEditingController(text: '1');
+    final _roomCtrl = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (_) => StatefulBuilder(
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) => Dialog(
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16)),
-          insetPadding: const EdgeInsets.all(24),
+          insetPadding: const EdgeInsets.all(16),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -362,106 +585,85 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
                   ),
                 ]),
                 const SizedBox(height: 16),
-                // Вид + Дата
-                Row(children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Вид заняття',
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: AppTheme.textMid)),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            border:
-                                Border.all(color: AppTheme.border),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: DropdownButton<String>(
-                            value: _type,
-                            isExpanded: true,
-                            underline: const SizedBox(),
-                            items: ['Лекція', 'Практичне заняття',
-                              'Групове заняття', 'Лабораторна робота']
-                                .map((t) => DropdownMenuItem(
-                                    value: t, child: Text(t)))
-                                .toList(),
-                            onChanged: (v) =>
-                                setDialogState(() => _type = v!),
-                          ),
-                        ),
-                      ],
-                    ),
+                // Вид заняття
+                const Text('Вид заняття',
+                    style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppTheme.border),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Дата заняття',
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: AppTheme.textMid)),
-                        const SizedBox(height: 6),
-                        TextField(
-                          decoration: InputDecoration(
-                            hintText: 'дд.мм.рррр',
-                            border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(8)),
-                            contentPadding:
-                                const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 10),
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: DropdownButton<String>(
+                    value: _type,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: ['Лекція', 'Практичне заняття',
+                      'Групове заняття', 'Лабораторна робота']
+                        .map((t) => DropdownMenuItem<String>(
+                            value: t, child: Text(t)))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => _type = v!),
                   ),
-                ]),
+                ),
                 const SizedBox(height: 14),
-                _DialogField(label: 'Номер заняття *',
-                    hint: 'Введіть номер заняття: 1/1 | 2/2 | 4/3'),
+                _DialogField(
+                  label: 'Дата заняття',
+                  hint: 'дд.мм.рррр',
+                  controller: _dateCtrl,
+                ),
+                const SizedBox(height: 14),
+                _DialogField(
+                  label: 'Номер заняття *',
+                  hint: '1/1 | 2/2 | 4/3',
+                  controller: _codeCtrl,
+                ),
                 const SizedBox(height: 14),
                 _DialogField(
                   label: 'Найменування заняття *',
                   hint: 'Введіть найменування заняття',
-                  maxLines: 4,
+                  maxLines: 3,
+                  controller: _topicCtrl,
                 ),
                 const SizedBox(height: 14),
                 Row(children: [
                   Expanded(
                     child: _DialogField(
-                        label: 'Максимальний бал *',
-                        hint: '5',
-                        keyboardType: TextInputType.number),
+                      label: 'Максимальний бал *',
+                      hint: '5',
+                      controller: _scoreCtrl,
+                      keyboardType: TextInputType.number,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _DialogField(
-                        label: 'Пара',
-                        hint: '1',
-                        keyboardType: TextInputType.number),
+                      label: 'Пара',
+                      hint: '1',
+                      controller: _pairCtrl,
+                      keyboardType: TextInputType.number,
+                    ),
                   ),
                 ]),
                 const SizedBox(height: 14),
-                _DialogField(label: 'Аудиторія',
-                    hint: 'Номер аудиторії'),
+                _DialogField(
+                  label: 'Аудиторія',
+                  hint: 'Номер аудиторії',
+                  controller: _roomCtrl,
+                ),
                 const SizedBox(height: 20),
                 Row(children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
                       style: OutlinedButton.styleFrom(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
@@ -471,18 +673,19 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () {
+                        // Тут зберігаємо дані (в майбутньому — API call)
+                        Navigator.of(dialogContext).pop();
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
                       child: const Text('Створити',
-                          style:
-                              TextStyle(fontWeight: FontWeight.w600)),
+                          style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ]),
@@ -666,7 +869,8 @@ Widget _HCell(String text) => Padding(
 
 class _LessonsTab extends StatelessWidget {
   final VoidCallback onAdd;
-  const _LessonsTab({required this.onAdd});
+  final void Function(Map<String, dynamic>) onEdit;
+  const _LessonsTab({required this.onAdd, required this.onEdit});
 
   Color _typeColor(String type) {
     switch (type) {
@@ -801,7 +1005,7 @@ class _LessonsTab extends StatelessWidget {
                       child: IconButton(
                         icon: const Icon(Icons.edit_outlined,
                             size: 16, color: AppTheme.primary),
-                        onPressed: () {},
+                        onPressed: () => onEdit(l),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -818,45 +1022,142 @@ class _LessonsTab extends StatelessWidget {
 
 // ── Корисні посилання ─────────────────────────────────────────────────────────
 
-class _LinksTab extends StatelessWidget {
+class _LinksTab extends StatefulWidget {
+  @override
+  State<_LinksTab> createState() => _LinksTabState();
+}
+
+class _LinksTabState extends State<_LinksTab> {
+  bool _showMessengerInput = false;
+  final _messengerController = TextEditingController();
+  String? _messengerUrl;
+
+  final _links = {
+    'Drive': {
+      'icon': Icons.folder,
+      'url': 'https://drive.google.com',
+      'bg': const Color(0xFFE8F5E9),
+      'fg': const Color(0xFF2E7D32),
+    },
+    'Meet': {
+      'icon': Icons.videocam,
+      'url': 'https://meet.google.com',
+      'bg': const Color(0xFFE3F2FD),
+      'fg': const Color(0xFF1565C0),
+    },
+    'Moodle': {
+      'icon': Icons.school,
+      'url': 'https://moodle.viti.edu.ua',
+      'bg': const Color(0xFFFFF3E0),
+      'fg': const Color(0xFFE65100),
+    },
+  };
+
+  void _openUrl(String url) async {
+    // В реальному застосунку: url_launcher
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Відкриваємо: $url'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _messengerController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _LinkBadge(
-              icon: Icons.folder,
-              label: 'Drive',
-              bg: const Color(0xFFE8F5E9),
-              fg: const Color(0xFF2E7D32)),
-          _LinkBadge(
-              icon: Icons.videocam,
-              label: 'Meet',
-              bg: const Color(0xFFE3F2FD),
-              fg: const Color(0xFF1565C0)),
-          _LinkBadge(
-              icon: Icons.school,
-              label: 'Moodle',
-              bg: const Color(0xFFFFF3E0),
-              fg: const Color(0xFFE65100)),
-          // Додати месенджер
-          OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.link, size: 14),
-            label: const Text('Додати Месенджер',
-                style: TextStyle(fontSize: 12)),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.textMid,
-              side: const BorderSide(color: AppTheme.border),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ..._links.entries.map((e) => _LinkBadge(
+                    icon: e.value['icon'] as IconData,
+                    label: e.key,
+                    bg: e.value['bg'] as Color,
+                    fg: e.value['fg'] as Color,
+                    onTap: () => _openUrl(e.value['url'] as String),
+                  )),
+              if (_messengerUrl != null)
+                _LinkBadge(
+                  icon: Icons.chat_bubble_outline,
+                  label: 'Месенджер',
+                  bg: const Color(0xFFF3E8FF),
+                  fg: const Color(0xFF7C3AED),
+                  onTap: () => _openUrl(_messengerUrl!),
+                ),
+            ],
           ),
+          const SizedBox(height: 16),
+          // Кнопка / поле додавання месенджера
+          if (!_showMessengerInput && _messengerUrl == null)
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _showMessengerInput = true),
+              icon: const Icon(Icons.link, size: 14),
+              label: const Text('Додати Месенджер',
+                  style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.textMid,
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+              ),
+            ),
+          if (_showMessengerInput)
+            Row(children: [
+              const Icon(Icons.chat_bubble_outline,
+                  color: AppTheme.textMid, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _messengerController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Вставте посилання на месенджер',
+                    contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.check_circle,
+                    color: Color(0xFF16A34A), size: 28),
+                onPressed: () {
+                  final url = _messengerController.text.trim();
+                  if (url.isNotEmpty) {
+                    setState(() {
+                      _messengerUrl = url;
+                      _showMessengerInput = false;
+                    });
+                  }
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.cancel_outlined,
+                    color: AppTheme.textMid, size: 26),
+                onPressed: () => setState(() => _showMessengerInput = false),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ]),
         ],
       ),
     );
@@ -868,40 +1169,36 @@ class _LinkBadge extends StatelessWidget {
   final String label;
   final Color bg;
   final Color fg;
+  final VoidCallback? onTap;
   const _LinkBadge(
       {required this.icon,
       required this.label,
       required this.bg,
-      required this.fg});
+      required this.fg,
+      this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: fg.withOpacity(0.3)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: fg, size: 14),
+          Icon(icon, color: fg, size: 16),
           const SizedBox(width: 6),
           Text(label,
               style: TextStyle(
                   color: fg,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   fontSize: 13)),
         ]),
       ),
-      IconButton(
-        icon: const Icon(Icons.edit_outlined,
-            size: 14, color: AppTheme.textMid),
-        onPressed: () {},
-        padding: const EdgeInsets.all(4),
-        constraints: const BoxConstraints(),
-      ),
-    ]);
+    );
   }
 }
 
@@ -927,11 +1224,13 @@ class _DialogField extends StatelessWidget {
   final String hint;
   final int maxLines;
   final TextInputType? keyboardType;
+  final TextEditingController? controller;
   const _DialogField({
     required this.label,
     required this.hint,
     this.maxLines = 1,
     this.keyboardType,
+    this.controller,
   });
 
   @override
@@ -944,6 +1243,7 @@ class _DialogField extends StatelessWidget {
                 fontSize: 13, color: AppTheme.textMid)),
         const SizedBox(height: 6),
         TextField(
+          controller: controller,
           maxLines: maxLines,
           keyboardType: keyboardType,
           decoration: InputDecoration(

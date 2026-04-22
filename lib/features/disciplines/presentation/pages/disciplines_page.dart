@@ -257,8 +257,9 @@ class _DisciplineCard extends StatelessWidget {
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => GradeJournalPage(
                           disciplineId: discipline.id.toString(),
-                          groupName: '${journal['groupName']} навчальна група',
+                          groupName: '\${journal[\'groupName\']} навчальна група',
                           semesterId: journal['semester'].toString(),
+                          readOnly: true,
                         ),
                       ));
                     }
