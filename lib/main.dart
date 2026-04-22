@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/utils/app_router.dart';
@@ -18,7 +19,15 @@ class GradeBookApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     return MaterialApp.router(
       title: 'GradeBook ВІТІ',
-      theme: AppTheme.light,
+      theme: AppTheme.light.copyWith(
+        // Свайп назад на Android як на iOS
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          },
+        ),
+      ),
       themeMode: ThemeMode.light,
       routerConfig: router,
       debugShowCheckedModeBanner: false,

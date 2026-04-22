@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/splash/splash_page.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/dashboard/presentation/pages/dashboard_page.dart';
 import '../../features/disciplines/presentation/pages/disciplines_page.dart';
@@ -27,16 +28,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final notifier = _AuthRouterNotifier(ref);
 
   final router = GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/splash',
     refreshListenable: notifier,
     redirect: (context, state) {
       final isAuth = notifier.isAuthenticated;
-      final isLogin = state.matchedLocation == '/login';
-      if (!isAuth && !isLogin) return '/login';
-      if (isAuth && isLogin) return '/dashboard';
+      final loc = state.matchedLocation;
+      // Splash сам керує навігацією — не перехоплюємо
+      if (loc == '/splash') return null;
+      if (!isAuth && loc != '/login') return '/login';
+      if (isAuth && loc == '/login') return '/dashboard';
       return null;
     },
     routes: [
+      GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
       GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
       ShellRoute(
         builder: (_, __, child) => MainShell(child: child),
@@ -146,90 +150,133 @@ class _BottomNav extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
     final isCadet = role == 'CADET';
 
-    // КУРСАНТ: Головна | Дисципліни | Рейтинг | Мій профіль | Більше
-    // ВИКЛАДАЧ/АДМІН: Головна | Дисципліни | Журнали | Мій профіль | Більше
-    final items = isCadet
-        ? const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: 'Головна'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.school_outlined),
-                activeIcon: Icon(Icons.school),
-                label: 'Дисципліни'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.bar_chart_outlined),
-                activeIcon: Icon(Icons.bar_chart),
-                label: 'Рейтинг'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline),
-                activeIcon: Icon(Icons.person),
-                label: 'Мій профіль'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.menu),
-                activeIcon: Icon(Icons.menu),
-                label: 'Більше'),
+    final navItems = isCadet
+        ? [
+            _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Головна', path: '/dashboard'),
+            _NavItem(icon: Icons.school_outlined, activeIcon: Icons.school_rounded, label: 'Дисципліни', path: '/disciplines'),
+            _NavItem(icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart_rounded, label: 'Рейтинг', path: '/analytics'),
+            _NavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профіль', path: '/profile'),
+            _NavItem(icon: Icons.menu_rounded, activeIcon: Icons.menu_rounded, label: 'Більше', path: ''),
           ]
-        : const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: 'Головна'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.school_outlined),
-                activeIcon: Icon(Icons.school),
-                label: 'Дисципліни'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.menu_book_outlined),
-                activeIcon: Icon(Icons.menu_book),
-                label: 'Журнали'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline),
-                activeIcon: Icon(Icons.person),
-                label: 'Мій профіль'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.menu),
-                activeIcon: Icon(Icons.menu),
-                label: 'Більше'),
+        : [
+            _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Головна', path: '/dashboard'),
+            _NavItem(icon: Icons.school_outlined, activeIcon: Icons.school_rounded, label: 'Дисципліни', path: '/disciplines'),
+            _NavItem(icon: Icons.library_books_outlined, activeIcon: Icons.library_books_rounded, label: 'Журнали', path: '/journals'),
+            _NavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профіль', path: '/profile'),
+            _NavItem(icon: Icons.menu_rounded, activeIcon: Icons.menu_rounded, label: 'Більше', path: ''),
           ];
 
     int idx = 0;
     if (location.startsWith('/disciplines')) idx = 1;
-    else if (isCadet && (location.startsWith('/analytics') ||
-             location.startsWith('/grades')))   idx = 2;
+    else if (isCadet && (location.startsWith('/analytics') || location.startsWith('/grades'))) idx = 2;
     else if (!isCadet && location.startsWith('/journals')) idx = 2;
-    else if (location.startsWith('/profile'))  idx = 3;
+    else if (location.startsWith('/profile')) idx = 3;
 
-    return BottomNavigationBar(
-      currentIndex: idx,
-      type: BottomNavigationBarType.fixed,
-      backgroundColor: AppTheme.sidebar,
-      selectedItemColor: AppTheme.primary,
-      unselectedItemColor: const Color(0xFFCBD5E1),
-      selectedLabelStyle:
-          const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
-      unselectedLabelStyle: const TextStyle(fontSize: 10),
-      items: items,
-      onTap: (i) {
-        switch (i) {
-          case 0: context.go('/dashboard'); break;
-          case 1: context.go('/disciplines'); break;
-          case 2:
-            context.go(isCadet ? '/analytics' : '/journals');
-            break;
-          case 3: context.go('/profile'); break;
-          case 4:
-            showModalBottomSheet(
-              context: context,
-              backgroundColor: Colors.transparent,
-              builder: (_) => _MoreMenu(role: role),
-            );
-            break;
-        }
-      },
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.sidebar,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 62,
+          child: Row(
+            children: navItems.asMap().entries.map((e) {
+              final i = e.key;
+              final item = e.value;
+              final isSelected = i == idx;
+              return Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    switch (i) {
+                      case 0: context.go('/dashboard'); break;
+                      case 1: context.go('/disciplines'); break;
+                      case 2: context.go(isCadet ? '/analytics' : '/journals'); break;
+                      case 3: context.go('/profile'); break;
+                      case 4:
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => _MoreMenu(role: role),
+                        );
+                        break;
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOut,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isSelected ? 14 : 0,
+                            vertical: isSelected ? 4 : 0,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppTheme.primary.withOpacity(0.2)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Icon(
+                            isSelected ? item.activeIcon : item.icon,
+                            color: isSelected
+                                ? AppTheme.primary
+                                : const Color(0xFFCBD5E1),
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 250),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                            color: isSelected
+                                ? AppTheme.primary
+                                : const Color(0xFF94A3B8),
+                          ),
+                          child: Text(item.label),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
     );
   }
+}
+
+class _NavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  final String path;
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.path,
+  });
 }
 
 // ── "Більше" меню — різне залежно від ролі ───────────────────────────────────
