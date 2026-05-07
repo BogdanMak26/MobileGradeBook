@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../../../../core/mock/mock_data.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -508,6 +507,7 @@ class _JournalListPageState extends State<_JournalListPage> {
                                 disciplineId: widget.discipline.id.toString(),
                                 groupName: '${j['groupName']} навчальна група',
                                 semesterId: j['semester'].toString(),
+
                               ),
                             ),
                           ),

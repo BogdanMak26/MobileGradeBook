@@ -16,6 +16,7 @@ import '../../features/schedule/presentation/pages/schedule_page.dart';
 import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/groups/presentation/pages/my_group_page.dart';
 import '../../features/admin/presentation/pages/admin_page.dart';
+import '../../features/notifications/presentation/pages/notifications_settings_page.dart';
 import '../../features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../shared/theme/app_theme.dart';
 
@@ -42,6 +43,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
       GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
+      GoRoute(path: '/notifications', builder: (_, __) => const NotificationsSettingsPage()),
       ShellRoute(
         builder: (_, __, child) => MainShell(child: child),
         routes: [

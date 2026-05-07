@@ -1,11 +1,11 @@
 // lib/features/grades/presentation/pages/grade_journal_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import '../../../../core/mock/mock_data.dart';
+import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 
 // ── Мокові заняття для журналу ────────────────────────────────────────────────
 const _mockLessons = [
@@ -27,9 +27,6 @@ final _mockScores = <String, List<double?>> {
   'Дрига Микола':      [null, 1.75, 1.5,  4.0,  1.75],
   'Дубовик Владислав': [null, 1.75, 1.75, 6.0,  2.0],
 };
-
-double _total(List<double?> scores) =>
-    scores.fold(0.0, (sum, s) => sum + (s ?? 0.0));
 
 class GradeJournalPage extends ConsumerStatefulWidget {
   final String disciplineId;
@@ -67,16 +64,14 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
-  Color _scoreColor(double total) {
-    final pct = total / 20 * 100;
-    if (pct >= 75) return const Color(0xFF4ADE80);
-    if (pct >= 60) return const Color(0xFFFBBF24);
-    return const Color(0xFFF87171);
-  }
-
   @override
   Widget build(BuildContext context) {
     final disc = _discipline;
+    final role = ref.watch(authViewModelProvider).role;
+    final canEdit = !widget.readOnly &&
+        (role == UserRole.instructor ||
+         role == UserRole.departmentHead ||
+         role == UserRole.superAdmin);
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -84,16 +79,16 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
           children: [
             Text(
               disc != null
-                  ? '${disc.shortName} - ${widget.groupName ?? 'Журнал'}'
+                  ? '${disc.shortName} — ${widget.groupName ?? 'Журнал'}'
                   : 'Журнал',
               style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold),
+                  fontSize: 15, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
             ),
             const Text('Електронний журнал успішності',
-                style: TextStyle(fontSize: 11, color: AppTheme.textMid)),
+                style: TextStyle(fontSize: 10, color: AppTheme.textMid)),
           ],
         ),
-        // Прогрес-бар зверху (зелений)
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(6),
           child: Container(
@@ -106,55 +101,41 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
           ),
         ),
         actions: [
-          // Оновити
-          TextButton.icon(
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 20),
             onPressed: () {},
-            icon: const Icon(Icons.refresh, size: 16,
-                color: AppTheme.textMid),
-            label: const Text('Оновити',
-                style: TextStyle(
-                    fontSize: 12, color: AppTheme.textMid)),
+            tooltip: 'Оновити',
+            padding: const EdgeInsets.all(8),
           ),
-          // Створити з РПНД та Додати заняття — тільки для викладача
           if (!widget.readOnly)
-          OutlinedButton.icon(
-            onPressed: () => _showRpndDialog(context),
-            icon: const Icon(Icons.description_outlined,
-                size: 14, color: AppTheme.textMid),
-            label: const Text('Створити з РПНД',
-                style: TextStyle(
-                    fontSize: 11, color: AppTheme.textMid)),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 4),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              side: const BorderSide(color: AppTheme.border),
-            ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded, size: 22),
+            onSelected: (v) {
+              if (v == 'rpnd') _showRpndDialog(context);
+              if (v == 'add') _showAddLessonDialog(context);
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'add',
+                child: Row(children: [
+                  Icon(Icons.add_circle_outline, size: 18,
+                      color: AppTheme.primary),
+                  SizedBox(width: 10),
+                  Text('Додати заняття'),
+                ]),
+              ),
+              const PopupMenuItem(
+                value: 'rpnd',
+                child: Row(children: [
+                  Icon(Icons.description_outlined, size: 18,
+                      color: AppTheme.textMid),
+                  SizedBox(width: 10),
+                  Text('Створити з РПНД'),
+                ]),
+              ),
+            ],
           ),
-          const SizedBox(width: 6),
-          // + Додати заняття — тільки для викладача
-          if (!widget.readOnly)
-          ElevatedButton.icon(
-            onPressed: () => _showAddLessonDialog(context),
-            icon: const Icon(Icons.add, size: 14,
-                color: Colors.white),
-            label: const Text('Додати заняття',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 6),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6)),
-            ),
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(
@@ -180,11 +161,14 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
             child: TabBarView(
               controller: _tab,
               children: [
-                _GradesTab(scores: _scores),
-                _LessonsTab(
-                  onAdd: () => _showAddLessonDialog(context),
-                  onEdit: (l) => _showEditLessonDialog(context, l),
+                _GradesTab(
+                  scores: _scores,
+                  canEdit: canEdit,
+                  onScoreChanged: (name, lessonIdx, newScore) {
+                    setState(() => _scores[name]![lessonIdx] = newScore);
+                  },
                 ),
+                _LessonsTab(onAdd: () => _showAddLessonDialog(context)),
                 _LinksTab(),
               ],
             ),
@@ -194,186 +178,10 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
     );
   }
 
-  void _showEditLessonDialog(BuildContext context, Map<String, dynamic> lesson) {
-    final _typeMap = {
-      'ЛЕКЦІЯ': 'Лекція',
-      'ГРУПОВЕ ЗАНЯТТЯ': 'Групове заняття',
-      'ПРАКТИЧНЕ ЗАНЯТТЯ': 'Практичне заняття',
-      'ЛАБОРАТОРНА РОБОТА': 'Лабораторна робота',
-    };
-    String _type = _typeMap[lesson['type'] as String] ?? 'Лекція';
-    final _codeCtrl = TextEditingController(text: lesson['code'] as String? ?? '');
-    final _topicCtrl = TextEditingController(text: lesson['topic'] as String? ?? '');
-    final _dateCtrl = TextEditingController(text: lesson['date'] as String? ?? '');
-    final _scoreCtrl = TextEditingController(
-        text: lesson['maxScore'] != null ? '${lesson['maxScore']}' : '0');
-    final _pairCtrl = TextEditingController(text: '1');
-    final _roomCtrl = TextEditingController(text: '');
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Dialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
-          insetPadding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Заголовок + хрестик
-                Row(children: [
-                  const Expanded(
-                    child: Text('Редагувати заняття',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 17,
-                            color: AppTheme.textDark)),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                  ),
-                ]),
-                const SizedBox(height: 16),
-                // Вид заняття
-                const Text('Вид заняття',
-                    style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppTheme.border),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: DropdownButton<String>(
-                    value: _type,
-                    isExpanded: true,
-                    underline: const SizedBox(),
-                    items: ['Лекція', 'Практичне заняття',
-                      'Групове заняття', 'Лабораторна робота']
-                        .map((t) => DropdownMenuItem<String>(
-                            value: t,
-                            child: Text(t, style: const TextStyle(fontSize: 13))))
-                        .toList(),
-                    onChanged: (v) => setDialogState(() => _type = v!),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                // Дата заняття
-                _DialogField(
-                  label: 'Дата заняття',
-                  hint: 'дд.мм.рррр',
-                  controller: _dateCtrl,
-                ),
-                const SizedBox(height: 14),
-                // Номер заняття
-                _DialogField(
-                  label: 'Номер заняття *',
-                  hint: '1/1 | 2/2 | 4/3',
-                  controller: _codeCtrl,
-                ),
-                const SizedBox(height: 14),
-                // Тема
-                _DialogField(
-                  label: 'Найменування заняття *',
-                  hint: 'Введіть тему заняття',
-                  maxLines: 3,
-                  controller: _topicCtrl,
-                ),
-                const SizedBox(height: 14),
-                // Макс бал + Пара
-                Row(children: [
-                  Expanded(
-                    child: _DialogField(
-                      label: 'Максимальний бал *',
-                      hint: '0',
-                      controller: _scoreCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _DialogField(
-                      label: 'Пара',
-                      hint: '1',
-                      controller: _pairCtrl,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 6),
-                const Text(
-                  'Автоматично розраховується як сума максимальних балів всіх колонок',
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: AppTheme.textMid,
-                      fontStyle: FontStyle.italic),
-                ),
-                const SizedBox(height: 14),
-                // Аудиторія
-                _DialogField(
-                  label: 'Аудиторія',
-                  hint: 'Номер аудиторії',
-                  controller: _roomCtrl,
-                ),
-                const Divider(height: 28),
-                // Кнопки
-                Row(children: [
-                  ElevatedButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDC2626),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Видалити'),
-                  ),
-                  const Spacer(),
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Скасувати'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2563EB),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Оновити',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showRpndDialog(BuildContext context) {
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => Dialog(
+      builder: (_) => Dialog(
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.all(24),
@@ -393,7 +201,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
-                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  onPressed: () => Navigator.pop(context),
                 ),
               ]),
               const SizedBox(height: 12),
@@ -403,79 +211,48 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                     fontSize: 13, color: AppTheme.textDark),
               ),
               const SizedBox(height: 16),
-              // File picker zone
-              StatefulBuilder(
-                builder: (ctx2, setFileState) {
-                  String? _fileName;
-                  return GestureDetector(
-                    onTap: () async {
-                      final result = await FilePicker.platform.pickFiles(
-                        type: FileType.custom,
-                        allowedExtensions: ['docx'],
-                      );
-                      if (result != null && result.files.isNotEmpty) {
-                        setFileState(() => _fileName = result.files.first.name);
-                      }
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: _fileName != null
-                                ? AppTheme.primary
-                                : AppTheme.border,
-                            width: 1.5),
-                      ),
-                      child: Column(
+              // Drop zone
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.border,
+                      style: BorderStyle.solid,
+                      width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.upload_file,
+                        size: 48,
+                        color: Colors.grey.shade400),
+                    const SizedBox(height: 12),
+                    RichText(
+                      textAlign: TextAlign.center,
+                      text: const TextSpan(
+                        text: 'Перетягніть файл сюди або ',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textDark),
                         children: [
-                          Icon(
-                            _fileName != null
-                                ? Icons.insert_drive_file
-                                : Icons.upload_file,
-                            size: 48,
-                            color: _fileName != null
-                                ? AppTheme.primary
-                                : Colors.grey.shade400),
-                          const SizedBox(height: 12),
-                          if (_fileName != null)
-                            Text(_fileName!,
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.primary),
-                                textAlign: TextAlign.center)
-                          else ...[
-                            RichText(
-                              textAlign: TextAlign.center,
-                              text: const TextSpan(
-                                text: 'Натисніть щоб ',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppTheme.textDark),
-                                children: [
-                                  TextSpan(
-                                    text: 'обрати файл',
-                                    style: TextStyle(
-                                        color: AppTheme.primary,
-                                        fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text('Підтримується: DOCX (макс. 10 МБ)',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppTheme.textMid)),
-                          ],
+                          TextSpan(
+                            text: 'оберіть файл',
+                            style: TextStyle(
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600),
+                          ),
                         ],
                       ),
                     ),
-                  );
-                },
+                    const SizedBox(height: 4),
+                    const Text('Підтримується: DOCX (макс. 10 МБ)',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textMid)),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
               Container(
@@ -499,14 +276,14 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                         .map((item) => Padding(
                               padding:
                                   const EdgeInsets.only(bottom: 4),
-                              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              child: Row(children: [
                                 const Text('• ',
                                     style: TextStyle(
                                         color: AppTheme.textMid)),
-                                Expanded(child: Text(item,
+                                Text(item,
                                     style: const TextStyle(
                                         fontSize: 13,
-                                        color: AppTheme.textDark))),
+                                        color: AppTheme.textDark)),
                               ]),
                             )),
                   ],
@@ -516,7 +293,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
               Row(children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    onPressed: () => Navigator.pop(context),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF374151),
                       foregroundColor: Colors.white,
@@ -531,7 +308,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.upload_file,
                         size: 16, color: Colors.white),
                     label: const Text('Завантажити'),
@@ -555,23 +332,15 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
 
   void _showAddLessonDialog(BuildContext context) {
     String _type = 'Лекція';
-    final _codeCtrl = TextEditingController();
-    final _topicCtrl = TextEditingController();
-    final _dateCtrl = TextEditingController();
-    final _scoreCtrl = TextEditingController(text: '5');
-    final _pairCtrl = TextEditingController(text: '1');
-    final _roomCtrl = TextEditingController();
-
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
+      builder: (_) => StatefulBuilder(
         builder: (ctx, setDialogState) => Dialog(
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16)),
-          insetPadding: const EdgeInsets.all(16),
+          insetPadding: const EdgeInsets.all(24),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -585,85 +354,106 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    onPressed: () => Navigator.pop(context),
                   ),
                 ]),
                 const SizedBox(height: 16),
-                // Вид заняття
-                const Text('Вид заняття',
-                    style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppTheme.border),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: DropdownButton<String>(
-                    value: _type,
-                    isExpanded: true,
-                    underline: const SizedBox(),
-                    items: ['Лекція', 'Практичне заняття',
-                      'Групове заняття', 'Лабораторна робота']
-                        .map((t) => DropdownMenuItem<String>(
-                            value: t, child: Text(t)))
-                        .toList(),
-                    onChanged: (v) => setDialogState(() => _type = v!),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _DialogField(
-                  label: 'Дата заняття',
-                  hint: 'дд.мм.рррр',
-                  controller: _dateCtrl,
-                ),
-                const SizedBox(height: 14),
-                _DialogField(
-                  label: 'Номер заняття *',
-                  hint: '1/1 | 2/2 | 4/3',
-                  controller: _codeCtrl,
-                ),
-                const SizedBox(height: 14),
-                _DialogField(
-                  label: 'Найменування заняття *',
-                  hint: 'Введіть найменування заняття',
-                  maxLines: 3,
-                  controller: _topicCtrl,
-                ),
-                const SizedBox(height: 14),
+                // Вид + Дата
                 Row(children: [
                   Expanded(
-                    child: _DialogField(
-                      label: 'Максимальний бал *',
-                      hint: '5',
-                      controller: _scoreCtrl,
-                      keyboardType: TextInputType.number,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Вид заняття',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.textMid)),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            border:
+                                Border.all(color: AppTheme.border),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: DropdownButton<String>(
+                            value: _type,
+                            isExpanded: true,
+                            underline: const SizedBox(),
+                            items: ['Лекція', 'Практичне заняття',
+                              'Групове заняття', 'Лабораторна робота']
+                                .map((t) => DropdownMenuItem(
+                                    value: t, child: Text(t)))
+                                .toList(),
+                            onChanged: (v) =>
+                                setDialogState(() => _type = v!),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _DialogField(
-                      label: 'Пара',
-                      hint: '1',
-                      controller: _pairCtrl,
-                      keyboardType: TextInputType.number,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Дата заняття',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.textMid)),
+                        const SizedBox(height: 6),
+                        TextField(
+                          decoration: InputDecoration(
+                            hintText: 'дд.мм.рррр',
+                            border: OutlineInputBorder(
+                                borderRadius:
+                                    BorderRadius.circular(8)),
+                            contentPadding:
+                                const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ]),
                 const SizedBox(height: 14),
+                _DialogField(label: 'Номер заняття *',
+                    hint: 'Введіть номер заняття: 1/1 | 2/2 | 4/3'),
+                const SizedBox(height: 14),
                 _DialogField(
-                  label: 'Аудиторія',
-                  hint: 'Номер аудиторії',
-                  controller: _roomCtrl,
+                  label: 'Найменування заняття *',
+                  hint: 'Введіть найменування заняття',
+                  maxLines: 4,
                 ),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(
+                    child: _DialogField(
+                        label: 'Максимальний бал *',
+                        hint: '5',
+                        keyboardType: TextInputType.number),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _DialogField(
+                        label: 'Пара',
+                        hint: '1',
+                        keyboardType: TextInputType.number),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                _DialogField(label: 'Аудиторія',
+                    hint: 'Номер аудиторії'),
                 const SizedBox(height: 20),
                 Row(children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      onPressed: () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
@@ -673,19 +463,18 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
-                        // Тут зберігаємо дані (в майбутньому — API call)
-                        Navigator.of(dialogContext).pop();
-                      },
+                      onPressed: () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
                       child: const Text('Створити',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
+                          style:
+                              TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ]),
@@ -700,177 +489,536 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
 
 // ── Журнал оцінок — горизонтальна таблиця ─────────────────────────────────────
 
-class _GradesTab extends StatelessWidget {
+class _GradesTab extends StatefulWidget {
   final Map<String, List<double?>> scores;
-  const _GradesTab({required this.scores});
+  final bool canEdit;
+  final void Function(String cadetName, int lessonIdx, double? newScore) onScoreChanged;
 
-  Color _scoreColor(double total) {
-    final pct = total / 20 * 100;
-    if (pct >= 75) return const Color(0xFF4ADE80);
-    if (pct >= 60) return const Color(0xFFFBBF24);
-    return const Color(0xFFF87171);
-  }
+  const _GradesTab({
+    required this.scores,
+    required this.canEdit,
+    required this.onScoreChanged,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    final cadets = scores.keys.toList();
-    return SingleChildScrollView(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Table(
-          border: TableBorder.all(color: AppTheme.border, width: 0.5),
-          defaultColumnWidth: const FixedColumnWidth(70),
-          columnWidths: const {
-            0: FixedColumnWidth(36),
-            1: FixedColumnWidth(160),
-            2: FixedColumnWidth(80),
-          },
-          children: [
-            // Header row 1 — коди занять
-            TableRow(
-              decoration: BoxDecoration(color: AppTheme.surface),
-              children: [
-                _HCell('№'),
-                _HCell('ПІБ'),
-                _HCell('бали'),
-                ..._mockLessons.map((l) => _LessonHeader(l)),
-              ],
+  State<_GradesTab> createState() => _GradesTabState();
+}
+
+class _GradesTabState extends State<_GradesTab> {
+  final _scrollCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Color _scoreColor(double pct) {
+    if (pct >= 75) return const Color(0xFF16A34A);
+    if (pct >= 60) return const Color(0xFFD97706);
+    return const Color(0xFFDC2626);
+  }
+
+  Color _scoreBg(double pct) {
+    if (pct >= 75) return const Color(0xFFDCFCE7);
+    if (pct >= 60) return const Color(0xFFFEF3C7);
+    return const Color(0xFFFEE2E2);
+  }
+
+  Color _cellScoreColor(double? score, double? maxScore) {
+    if (score == null) return Colors.transparent;
+    if (maxScore == null) return const Color(0xFFE0F2FE);
+    final pct = score / maxScore * 100;
+    if (pct >= 75) return const Color(0xFFDCFCE7);
+    if (pct >= 50) return const Color(0xFFFEF3C7);
+    return const Color(0xFFFEE2E2);
+  }
+
+  static const double _rowH   = 48.0;
+  static const double _headH  = 36.0;
+  static const double _dateH  = 24.0;
+  static const double _fixedW = 200.0;
+  static const double _colW   = 72.0;
+
+  void _showScoreDialog(
+    BuildContext context,
+    String cadetName,
+    int lessonIdx,
+    double maxScore,
+    double? currentScore,
+  ) {
+    final ctrl = TextEditingController(
+      text: currentScore != null ? currentScore.toString() : '',
+    );
+    String? errorText;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: Text(
+            cadetName,
+            style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textDark),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Заняття ${_mockLessons[lessonIdx]['code']}',
+                style: const TextStyle(fontSize: 12, color: AppTheme.textMid),
+              ),
+              Text(
+                'Макс. бал: $maxScore',
+                style: const TextStyle(fontSize: 12, color: AppTheme.textMid),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Оцінка',
+                  hintText: '0 – $maxScore',
+                  errorText: errorText,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  suffixText: '/ $maxScore',
+                ),
+                onChanged: (_) => setDialogState(() => errorText = null),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Скасувати'),
             ),
-            // Header row 2 — дати
-            TableRow(
-              decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
-              children: [
-                _HCell(''),
-                _HCell(''),
-                _HCell(''),
-                ..._mockLessons.map((l) => Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 4, horizontal: 2),
-                      child: Text(l['date'] as String,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 9,
-                              color: AppTheme.textMid)),
-                    )),
-              ],
+            if (currentScore != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  widget.onScoreChanged(cadetName, lessonIdx, null);
+                },
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFFDC2626)),
+                child: const Text('Видалити'),
+              ),
+            ElevatedButton(
+              onPressed: () {
+                final raw = ctrl.text.trim().replaceAll(',', '.');
+                if (raw.isEmpty) {
+                  Navigator.pop(ctx);
+                  widget.onScoreChanged(cadetName, lessonIdx, null);
+                  return;
+                }
+                final val = double.tryParse(raw);
+                if (val == null || val < 0) {
+                  setDialogState(() => errorText = 'Введіть число ≥ 0');
+                  return;
+                }
+                if (val > maxScore) {
+                  setDialogState(() => errorText = 'Макс. допустимий бал: $maxScore');
+                  return;
+                }
+                Navigator.pop(ctx);
+                widget.onScoreChanged(cadetName, lessonIdx, val);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Зберегти'),
             ),
-            // Data rows
-            ...cadets.asMap().entries.map((entry) {
-              final i = entry.key;
-              final name = entry.value;
-              final cadetScores = scores[name]!;
-              final total = cadetScores.fold(
-                  0.0, (sum, s) => sum + (s ?? 0.0));
-              final pct = (total / 20 * 100).round();
-              return TableRow(
-                children: [
-                  // №
-                  Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: Text('${i + 1}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textMid)),
-                  ),
-                  // ПІБ
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 6),
-                    child: Text(name,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textDark)),
-                  ),
-                  // Бали
-                  Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _scoreColor(total),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '$total ($pct%)',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
-                      ),
-                    ),
-                  ),
-                  // Оцінки по заняттях
-                  ...cadetScores.map((s) => Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Text(
-                          s != null ? s.toString() : '',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textDark),
-                        ),
-                      )),
-                ],
-              );
-            }),
           ],
         ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final cadets = widget.scores.keys.toList();
+    final lessons = _mockLessons;
+
+    return Column(
+      children: [
+        // ── Статистика зверху ───────────────────────────────────────────
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(children: [
+            _StatBadge(
+              label: 'Курсантів',
+              value: '${cadets.length}',
+              color: AppTheme.secondary,
+            ),
+            const SizedBox(width: 10),
+            _StatBadge(
+              label: 'Занять',
+              value: '${lessons.length}',
+              color: const Color(0xFF0284C7),
+            ),
+            const Spacer(),
+            _LegendDot(color: const Color(0xFF16A34A), label: '≥75%'),
+            const SizedBox(width: 8),
+            _LegendDot(color: const Color(0xFFD97706), label: '60-74%'),
+            const SizedBox(width: 8),
+            _LegendDot(color: const Color(0xFFDC2626), label: '<60%'),
+          ]),
+        ),
+        const Divider(height: 1),
+
+        // ── Таблиця зі sticky лівою частиною ───────────────────────────
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Фіксована ліва частина (№, ПІБ, Бали) ───────────────
+              SizedBox(
+                width: _fixedW,
+                child: Column(
+                  children: [
+                    Container(
+                      height: _headH + _dateH,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF1F5F9),
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                          right: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: const Row(children: [
+                        SizedBox(
+                          width: 36,
+                          child: Center(
+                            child: Text('№',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textMid)),
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8),
+                            child: Text('ПІБ',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textMid)),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 64,
+                          child: Center(
+                            child: Text('Бали',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textMid)),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        physics: const ClampingScrollPhysics(),
+                        itemCount: cadets.length,
+                        itemExtent: _rowH,
+                        itemBuilder: (ctx, i) {
+                          final name = cadets[i];
+                          final cadetScores = widget.scores[name]!;
+                          final total = cadetScores.fold(0.0, (s, v) => s + (v ?? 0.0));
+                          final pct = (total / 20 * 100).round();
+                          final isEven = i % 2 == 0;
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isEven ? Colors.white : const Color(0xFFFAFAFA),
+                              border: const Border(
+                                bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                                right: BorderSide(color: Color(0xFFE2E8F0), width: 2),
+                              ),
+                            ),
+                            child: Row(children: [
+                              SizedBox(
+                                width: 36,
+                                child: Center(
+                                  child: Text('${i + 1}',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.textLight,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text(name,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppTheme.textDark),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 64,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: _scoreBg(pct.toDouble()),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: _scoreColor(pct.toDouble()).withOpacity(0.3),
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${total.toStringAsFixed(1)}\n$pct%',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            height: 1.2,
+                                            color: _scoreColor(pct.toDouble())),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ]),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Прокручувана права частина (заняття) ─────────────────
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scrollCtrl,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: lessons.length * _colW,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: _headH,
+                          child: Row(
+                            children: lessons.map((l) {
+                              return _LessonHeaderCell(lesson: l, width: _colW);
+                            }).toList(),
+                          ),
+                        ),
+                        SizedBox(
+                          height: _dateH,
+                          child: Row(
+                            children: lessons.map((l) {
+                              return Container(
+                                width: _colW,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFF8FAFC),
+                                  border: Border(
+                                    bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                                    right: BorderSide(color: Color(0xFFE2E8F0)),
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(l['date'] as String,
+                                      style: const TextStyle(
+                                          fontSize: 9, color: AppTheme.textMid)),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            physics: const ClampingScrollPhysics(),
+                            itemCount: cadets.length,
+                            itemExtent: _rowH,
+                            itemBuilder: (ctx, i) {
+                              final name = cadets[i];
+                              final cadetScores = widget.scores[name]!;
+                              final isEven = i % 2 == 0;
+                              return Row(
+                                children: lessons.asMap().entries.map((e) {
+                                  final li = e.key;
+                                  final lesson = e.value;
+                                  final score = li < cadetScores.length
+                                      ? cadetScores[li]
+                                      : null;
+                                  final maxScore = lesson['maxScore'] as double?;
+                                  final bg = score != null
+                                      ? _cellScoreColor(score, maxScore)
+                                      : (isEven ? Colors.white : const Color(0xFFFAFAFA));
+
+                                  final canTap = widget.canEdit && maxScore != null;
+
+                                  Widget cell = Container(
+                                    width: _colW,
+                                    decoration: BoxDecoration(
+                                      color: bg,
+                                      border: const Border(
+                                        bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                                        right: BorderSide(color: Color(0xFFE2E8F0)),
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: score != null
+                                          ? Text(score.toString(),
+                                              style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: maxScore != null
+                                                      ? _scoreColor(score / maxScore * 100)
+                                                      : const Color(0xFF0284C7)))
+                                          : canTap
+                                              ? Icon(Icons.add,
+                                                  size: 14,
+                                                  color: AppTheme.textLight.withOpacity(0.4))
+                                              : const Text('—',
+                                                  style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Color(0xFFCBD5E1))),
+                                    ),
+                                  );
+
+                                  if (canTap) {
+                                    cell = InkWell(
+                                      onTap: () => _showScoreDialog(
+                                          context, name, li, maxScore, score),
+                                      child: cell,
+                                    );
+                                  }
+
+                                  return cell;
+                                }).toList(),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _LessonHeader extends StatelessWidget {
-  final Map<String, dynamic> lesson;
-  const _LessonHeader(this.lesson);
+class _StatBadge extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _StatBadge(
+      {required this.label, required this.value, required this.color});
 
-  Color get _color {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(value,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: color)),
+        const SizedBox(width: 4),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 11, color: AppTheme.textMid)),
+      ]),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 8, height: 8,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 3),
+      Text(label,
+          style: const TextStyle(fontSize: 9, color: AppTheme.textMid)),
+    ]);
+  }
+}
+
+class _LessonHeaderCell extends StatelessWidget {
+  final Map<String, dynamic> lesson;
+  final double width;
+  const _LessonHeaderCell({required this.lesson, required this.width});
+
+  Color get _bg {
     switch (lesson['type'] as String) {
-      case 'ЛЕКЦІЯ':           return const Color(0xFF93C5FD);
-      case 'ГРУПОВЕ ЗАНЯТТЯ':  return const Color(0xFF86EFAC);
-      case 'ПРАКТИЧНЕ ЗАНЯТТЯ':return const Color(0xFFFDE68A);
-      default:                 return AppTheme.border;
+      case 'ЛЕКЦІЯ':            return const Color(0xFFDBEAFE);
+      case 'ГРУПОВЕ ЗАНЯТТЯ':   return const Color(0xFFDCFCE7);
+      case 'ПРАКТИЧНЕ ЗАНЯТТЯ': return const Color(0xFFFEF3C7);
+      default:                  return AppTheme.surface;
+    }
+  }
+
+  Color get _fg {
+    switch (lesson['type'] as String) {
+      case 'ЛЕКЦІЯ':            return const Color(0xFF1D4ED8);
+      case 'ГРУПОВЕ ЗАНЯТТЯ':   return const Color(0xFF15803D);
+      case 'ПРАКТИЧНЕ ЗАНЯТТЯ': return const Color(0xFFB45309);
+      default:                  return AppTheme.textMid;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        decoration: BoxDecoration(
-          color: _color,
-          borderRadius: BorderRadius.circular(4),
+    return Container(
+      width: width,
+      decoration: BoxDecoration(
+        color: _bg,
+        border: Border(
+          bottom: BorderSide(color: _fg.withOpacity(0.2)),
+          right: const BorderSide(color: Color(0xFFE2E8F0)),
         ),
+      ),
+      child: Center(
         child: Text(lesson['code'] as String,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w600)),
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: _fg)),
       ),
     );
   }
 }
 
-Widget _HCell(String text) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      child: Text(text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textMid)),
-    );
-
 // ── Управління заняттями ──────────────────────────────────────────────────────
 
 class _LessonsTab extends StatelessWidget {
   final VoidCallback onAdd;
-  final void Function(Map<String, dynamic>) onEdit;
-  const _LessonsTab({required this.onAdd, required this.onEdit});
+  const _LessonsTab({required this.onAdd});
 
   Color _typeColor(String type) {
     switch (type) {
@@ -1005,7 +1153,7 @@ class _LessonsTab extends StatelessWidget {
                       child: IconButton(
                         icon: const Icon(Icons.edit_outlined,
                             size: 16, color: AppTheme.primary),
-                        onPressed: () => onEdit(l),
+                        onPressed: () {},
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -1022,142 +1170,45 @@ class _LessonsTab extends StatelessWidget {
 
 // ── Корисні посилання ─────────────────────────────────────────────────────────
 
-class _LinksTab extends StatefulWidget {
-  @override
-  State<_LinksTab> createState() => _LinksTabState();
-}
-
-class _LinksTabState extends State<_LinksTab> {
-  bool _showMessengerInput = false;
-  final _messengerController = TextEditingController();
-  String? _messengerUrl;
-
-  final _links = {
-    'Drive': {
-      'icon': Icons.folder,
-      'url': 'https://drive.google.com',
-      'bg': const Color(0xFFE8F5E9),
-      'fg': const Color(0xFF2E7D32),
-    },
-    'Meet': {
-      'icon': Icons.videocam,
-      'url': 'https://meet.google.com',
-      'bg': const Color(0xFFE3F2FD),
-      'fg': const Color(0xFF1565C0),
-    },
-    'Moodle': {
-      'icon': Icons.school,
-      'url': 'https://moodle.viti.edu.ua',
-      'bg': const Color(0xFFFFF3E0),
-      'fg': const Color(0xFFE65100),
-    },
-  };
-
-  void _openUrl(String url) async {
-    // В реальному застосунку: url_launcher
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Відкриваємо: $url'),
-        duration: const Duration(seconds: 2),
-        backgroundColor: AppTheme.primary,
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _messengerController.dispose();
-    super.dispose();
-  }
-
+class _LinksTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              ..._links.entries.map((e) => _LinkBadge(
-                    icon: e.value['icon'] as IconData,
-                    label: e.key,
-                    bg: e.value['bg'] as Color,
-                    fg: e.value['fg'] as Color,
-                    onTap: () => _openUrl(e.value['url'] as String),
-                  )),
-              if (_messengerUrl != null)
-                _LinkBadge(
-                  icon: Icons.chat_bubble_outline,
-                  label: 'Месенджер',
-                  bg: const Color(0xFFF3E8FF),
-                  fg: const Color(0xFF7C3AED),
-                  onTap: () => _openUrl(_messengerUrl!),
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Кнопка / поле додавання месенджера
-          if (!_showMessengerInput && _messengerUrl == null)
-            OutlinedButton.icon(
-              onPressed: () => setState(() => _showMessengerInput = true),
-              icon: const Icon(Icons.link, size: 14),
-              label: const Text('Додати Месенджер',
-                  style: TextStyle(fontSize: 12)),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.textMid,
-                side: const BorderSide(color: AppTheme.border),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
-              ),
+          _LinkBadge(
+              icon: Icons.folder,
+              label: 'Drive',
+              bg: const Color(0xFFE8F5E9),
+              fg: const Color(0xFF2E7D32)),
+          _LinkBadge(
+              icon: Icons.videocam,
+              label: 'Meet',
+              bg: const Color(0xFFE3F2FD),
+              fg: const Color(0xFF1565C0)),
+          _LinkBadge(
+              icon: Icons.school,
+              label: 'Moodle',
+              bg: const Color(0xFFFFF3E0),
+              fg: const Color(0xFFE65100)),
+          // Додати месенджер
+          OutlinedButton.icon(
+            onPressed: () {},
+            icon: const Icon(Icons.link, size: 14),
+            label: const Text('Додати Месенджер',
+                style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.textMid,
+              side: const BorderSide(color: AppTheme.border),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
             ),
-          if (_showMessengerInput)
-            Row(children: [
-              const Icon(Icons.chat_bubble_outline,
-                  color: AppTheme.textMid, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _messengerController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Вставте посилання на месенджер',
-                    contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    border: OutlineInputBorder(),
-                  ),
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.check_circle,
-                    color: Color(0xFF16A34A), size: 28),
-                onPressed: () {
-                  final url = _messengerController.text.trim();
-                  if (url.isNotEmpty) {
-                    setState(() {
-                      _messengerUrl = url;
-                      _showMessengerInput = false;
-                    });
-                  }
-                },
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.cancel_outlined,
-                    color: AppTheme.textMid, size: 26),
-                onPressed: () => setState(() => _showMessengerInput = false),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ]),
+          ),
         ],
       ),
     );
@@ -1169,36 +1220,40 @@ class _LinkBadge extends StatelessWidget {
   final String label;
   final Color bg;
   final Color fg;
-  final VoidCallback? onTap;
   const _LinkBadge(
       {required this.icon,
       required this.label,
       required this.bg,
-      required this.fg,
-      this.onTap});
+      required this.fg});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: fg.withOpacity(0.3)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: fg, size: 16),
+          Icon(icon, color: fg, size: 14),
           const SizedBox(width: 6),
           Text(label,
               style: TextStyle(
                   color: fg,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   fontSize: 13)),
         ]),
       ),
-    );
+      IconButton(
+        icon: const Icon(Icons.edit_outlined,
+            size: 14, color: AppTheme.textMid),
+        onPressed: () {},
+        padding: const EdgeInsets.all(4),
+        constraints: const BoxConstraints(),
+      ),
+    ]);
   }
 }
 
@@ -1224,13 +1279,11 @@ class _DialogField extends StatelessWidget {
   final String hint;
   final int maxLines;
   final TextInputType? keyboardType;
-  final TextEditingController? controller;
   const _DialogField({
     required this.label,
     required this.hint,
     this.maxLines = 1,
     this.keyboardType,
-    this.controller,
   });
 
   @override
@@ -1243,7 +1296,6 @@ class _DialogField extends StatelessWidget {
                 fontSize: 13, color: AppTheme.textMid)),
         const SizedBox(height: 6),
         TextField(
-          controller: controller,
           maxLines: maxLines,
           keyboardType: keyboardType,
           decoration: InputDecoration(

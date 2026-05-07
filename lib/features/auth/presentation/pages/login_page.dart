@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../core/mock/mock_data.dart';
 import '../viewmodels/auth_viewmodel.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -72,15 +71,21 @@ class _LoginPageState extends ConsumerState<LoginPage>
       _errorMessage = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _loadingRole = null;
-        _errorMessage =
-            'Google Workspace авторизація буде доступна після підключення до сервера ВІТІ.';
-      });
+    try {
+      await ref.read(authViewModelProvider.notifier).login();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Помилка авторизації: ${e.toString()}';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _loadingRole = null;
+        });
+      }
     }
   }
 

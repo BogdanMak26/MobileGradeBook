@@ -1,62 +1,53 @@
 name: gradebook_mobile
-description: Мобільний застосунок електронного журналу ВІТІ імені Героїв Крут
+description: GradeBook Mobile - ВІТІ імені Героїв Крут
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
-  flutter: '>=3.22.0'
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
 
   # State management
   flutter_riverpod: ^2.6.1
 
   # Navigation
-  go_router: ^13.2.5
+  go_router: ^14.6.2
 
-  # HTTP client
+  # Network
   dio: ^5.4.3
 
-  # Local DB — Offline-First (drift генерує app_database.g.dart)
-  drift: ^2.21.0
-  drift_flutter: ^0.2.7
-  sqlite3_flutter_libs: ^0.5.24
-  path_provider: ^2.1.3
-  path: ^1.9.0
-
-  # Auth — OAuth2 PKCE + Keycloak
-  #flutter_appauth: ^7.0.1
+  # Auth
   flutter_secure_storage: ^9.2.4
+  crypto: ^3.0.3           # для PKCE sha256
+  url_launcher: ^6.3.1     # відкриває Keycloak у браузері
+  app_links: ^6.3.2        # обробляє deep link callback
 
-  # Network monitoring
-  connectivity_plus: ^6.1.0
+  # File picker
+  file_picker: ^8.0.0
 
   # UI
-  cupertino_icons: ^1.0.8
-  cached_network_image: ^3.3.1
-  shimmer: ^3.0.0
   fl_chart: ^0.68.0
-  intl: ^0.19.0
-  flutter_animate: ^4.5.0
-  google_fonts: ^6.3.0
+  intl: ^0.20.2
 
-  # Utils
-  equatable: ^2.0.5
-  uuid: ^4.4.0
-  logger: ^2.3.0
+  # Localization & utils
   shared_preferences: ^2.3.0
-  file_picker: ^8.0.0
+  connectivity_plus: ^6.1.0
+
+  # Notifications
+  flutter_local_notifications: ^17.2.4
+
+
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
-  # Drift code generator — генерує app_database.g.dart
-  build_runner: ^2.4.13
-  drift_dev: ^2.21.2
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.6
 
 flutter:
   uses-material-design: true

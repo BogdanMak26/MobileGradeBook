@@ -1,7 +1,6 @@
 // lib/shared/theme/app_theme.dart
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   AppTheme._();
@@ -40,7 +39,6 @@ class AppTheme {
         surface: Colors.white,
       ),
       scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-      textTheme: GoogleFonts.interTextTheme(),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
         foregroundColor: textDark,

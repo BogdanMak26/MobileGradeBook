@@ -1,7 +1,6 @@
 // lib/features/journals/presentation/pages/journals_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../grades/presentation/pages/grade_journal_page.dart';
 

@@ -3,14 +3,15 @@
 class AppConstants {
   AppConstants._();
 
-  // Server
+  // ── Server ────────────────────────────────────────────────────────────────
   static const String baseUrl = 'https://gradebook.viti.edu.ua/api';
   static const String authUrl = 'https://auth.viti.edu.ua';
   static const String keycloakRealm = 'grade-book';
-  static const String keycloakClientId = 'grade-book-mobile';
+  static const String keycloakClientId = 'grade-book-client-web';
   static const String keycloakRedirectUri = 'com.viti.gradebook://callback';
+  static const String keycloakClientSecret = 'СЮДИ_ВСТАВИТИ_SECRET';
 
-  // Keycloak OIDC endpoints
+  // ── Keycloak OIDC endpoints ───────────────────────────────────────────────
   static const String issuerUrl = '$authUrl/realms/$keycloakRealm';
   static const String authorizationEndpoint =
       '$authUrl/realms/$keycloakRealm/protocol/openid-connect/auth';
@@ -21,15 +22,21 @@ class AppConstants {
   static const String endSessionEndpoint =
       '$authUrl/realms/$keycloakRealm/protocol/openid-connect/logout';
 
-  // Scopes
+  // ── Scopes ────────────────────────────────────────────────────────────────
   static const List<String> scopes = ['openid', 'profile', 'email', 'roles'];
 
-  // Sync
+  // ── Role constants ────────────────────────────────────────────────────────
+  static const String roleCadet = 'CADET';
+  static const String roleInstructor = 'INSTRUCTOR';
+  static const String roleDepartmentHead = 'DEPARTMENT_HEAD';
+  static const String roleAdmin = 'SUPER_ADMIN';
+
+  // ── Sync ──────────────────────────────────────────────────────────────────
   static const int syncIntervalMinutes = 15;
   static const int maxRetryAttempts = 3;
   static const int connectionTimeoutSeconds = 30;
 
-  // Storage keys
+  // ── Storage keys ──────────────────────────────────────────────────────────
   static const String accessTokenKey = 'access_token';
   static const String refreshTokenKey = 'refresh_token';
   static const String idTokenKey = 'id_token';
@@ -47,20 +54,13 @@ class UserRole {
 
   static String displayName(String role) {
     switch (role) {
-      case cadet:
-        return 'Курсант';
-      case instructor:
-        return 'Викладач';
-      case departmentHead:
-        return 'Начальник кафедри';
-      case facultyEducation:
-        return 'Навч. відділ факультету';
-      case instituteEducation:
-        return 'Навч. відділ інституту';
-      case superAdmin:
-        return 'Суперадмін';
-      default:
-        return role;
+      case cadet: return 'Курсант';
+      case instructor: return 'Викладач';
+      case departmentHead: return 'Начальник кафедри';
+      case facultyEducation: return 'Навч. відділ факультету';
+      case instituteEducation: return 'Навч. відділ інституту';
+      case superAdmin: return 'Суперадмін';
+      default: return role;
     }
   }
 }

@@ -1,26 +1,28 @@
 // lib/features/grades/presentation/viewmodels/grade_journal_viewmodel.dart
 
-import 'dart:convert';
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
-import '../../../../core/database/app_database.dart';
+import '../../../../core/local/local_cache.dart';
+import '../../../../core/local/offline_queue.dart';
 import '../../../../core/network/network_monitor.dart';
-import '../../../../core/network/sync_service.dart';
+import '../../data/models/grade_model.dart';
+import '../../data/models/lesson_model.dart';
+import '../../data/repositories/grades_repository.dart';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
 class JournalState {
   final bool isLoading;
   final String? error;
-  final List<Grade> grades;
+  final GradeJournalResponse? journal; // grades tab: cadets + lessons + оцінки
+  final List<LessonModel> lessons;     // lessons tab: детальний список занять
   final bool isSyncing;
   final String? syncMessage;
 
   const JournalState({
     this.isLoading = false,
     this.error,
-    this.grades = const [],
+    this.journal,
+    this.lessons = const [],
     this.isSyncing = false,
     this.syncMessage,
   });
@@ -28,14 +30,16 @@ class JournalState {
   JournalState copyWith({
     bool? isLoading,
     String? error,
-    List<Grade>? grades,
+    GradeJournalResponse? journal,
+    List<LessonModel>? lessons,
     bool? isSyncing,
     String? syncMessage,
   }) =>
       JournalState(
         isLoading: isLoading ?? this.isLoading,
         error: error,
-        grades: grades ?? this.grades,
+        journal: journal ?? this.journal,
+        lessons: lessons ?? this.lessons,
         isSyncing: isSyncing ?? this.isSyncing,
         syncMessage: syncMessage,
       );
@@ -44,97 +48,210 @@ class JournalState {
 // ─── ViewModel ────────────────────────────────────────────────────────────────
 
 class GradeJournalViewModel extends StateNotifier<JournalState> {
-  final AppDatabase _db;
-  final SyncService _syncService;
-  final NetworkMonitor _monitor;
+  final GradesRepository _repo;
+  final LocalCache _cache;
+  final OfflineQueueNotifier _queue;
+  final NetworkMonitor _network;
 
-  GradeJournalViewModel(this._db, this._syncService, this._monitor)
+  GradeJournalViewModel(this._repo, this._cache, this._queue, this._network)
       : super(const JournalState());
 
-  Future<void> loadGradesForLesson(String lessonId) async {
+  // ── Журнал оцінок ─────────────────────────────────────────────────────────
+
+  Future<void> loadJournal({
+    required int groupId,
+    required int disciplineId,
+    int? semesterId,
+  }) async {
     state = state.copyWith(isLoading: true, error: null);
+
+    if (!_network.isOnline) {
+      state = state.copyWith(isLoading: false);
+      return;
+    }
+
     try {
-      final grades = await _db.getGradesForLesson(lessonId);
-      state = state.copyWith(isLoading: false, grades: grades);
+      final journal = await _repo.getJournal(
+        groupId: groupId,
+        disciplineId: disciplineId,
+        semesterId: semesterId,
+      );
+      state = state.copyWith(isLoading: false, journal: journal);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
-  /// Offline-First: зберігаємо локально → sync_log → sync якщо онлайн
-  Future<void> setGrade({
-    required String lessonId,
-    required String cadetId,
-    int? score,
-    String? status,
-    String? note,
-  }) async {
-    final existing = state.grades
-        .where((g) => g.lessonId == lessonId && g.cadetId == cadetId)
-        .firstOrNull;
+  // ── Заняття (cache-first) ─────────────────────────────────────────────────
 
-    final gradeId = existing?.id ?? const Uuid().v4();
-    final now = DateTime.now();
-    final newClientVersion = (existing?.clientVersion ?? 0) + 1;
+  Future<void> loadLessons(int journalId) async {
+    state = state.copyWith(isLoading: true, error: null);
 
-    await _db.upsertGrade(GradesCompanion(
-      id: Value(gradeId),
-      lessonId: Value(lessonId),
-      cadetId: Value(cadetId),
-      score: Value(score),
-      status: Value(status),
-      note: Value(note),
-      clientVersion: Value(newClientVersion),
-      serverVersion: Value(existing?.serverVersion ?? 0),
-      updatedAt: Value(now),
-      isSynced: const Value(false),
-    ));
+    final cachedRaw = _cache.get<List<dynamic>>('lessons_$journalId');
+    if (cachedRaw != null) {
+      final cached = cachedRaw
+          .map((e) => LessonModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      state = state.copyWith(lessons: cached);
+    }
 
-    final payload = jsonEncode({
-      'id': gradeId,
-      'lesson_id': lessonId,
-      'cadet_id': cadetId,
-      'score': score,
-      'status': status,
-      'note': note,
-      'client_version': newClientVersion,
-      'updated_at': now.toIso8601String(),
-    });
+    if (!_network.isOnline) {
+      state = state.copyWith(isLoading: false);
+      return;
+    }
 
-    await _db.markGradeForSync(gradeId, payload);
-    await loadGradesForLesson(lessonId);
-
-    if (_monitor.isOnline) {
-      await _triggerSync();
-    } else {
-      state = state.copyWith(
-          syncMessage: 'Збережено офлайн. Синхронізується при підключенні.');
+    try {
+      final lessons = await _repo.getLessons(journalId);
+      await _cache.set(
+          'lessons_$journalId', lessons.map((l) => l.toJson()).toList());
+      state = state.copyWith(isLoading: false, lessons: lessons);
+    } catch (e) {
+      if (cachedRaw == null) {
+        state = state.copyWith(isLoading: false, error: e.toString());
+      } else {
+        state = state.copyWith(isLoading: false);
+      }
     }
   }
 
-  Future<void> _triggerSync() async {
-    state = state.copyWith(isSyncing: true);
-    try {
-      final result = await _syncService.syncPendingChanges();
+  // ── Виставлення оцінки: офлайн → черга, онлайн → API ─────────────────────
+
+  Future<void> putGrade({
+    required int lessonId,
+    required int cadetId,
+    double? score,
+    String? status,
+  }) async {
+    state = state.copyWith(isSyncing: true, syncMessage: null);
+
+    if (!_network.isOnline) {
+      await _queue.enqueue(PendingOp(
+        id: '${DateTime.now().millisecondsSinceEpoch}_grade_${lessonId}_$cadetId',
+        method: 'PUT',
+        path: '/lessons/$lessonId/grades/$cadetId',
+        data: {
+          'score': score,
+          if (status != null) 'status': status,
+        },
+        createdAt: DateTime.now(),
+      ));
       state = state.copyWith(
         isSyncing: false,
-        syncMessage: result.synced > 0 ? '✓ Синхронізовано' : null,
+        syncMessage: 'В черзі (${_queue.state} операцій)',
       );
-    } catch (_) {
-      state = state.copyWith(isSyncing: false);
+      return;
+    }
+
+    try {
+      await _repo.putGrade(
+          lessonId: lessonId, cadetId: cadetId, score: score, status: status);
+      state = state.copyWith(isSyncing: false, syncMessage: '✓ Збережено');
+    } catch (e) {
+      state = state.copyWith(
+          isSyncing: false, error: 'Помилка збереження: ${e.toString()}');
     }
   }
 
-  Future<void> manualSync() => _triggerSync();
+  // ── Масове виставлення оцінок ─────────────────────────────────────────────
+
+  Future<void> batchGrades(List<Map<String, dynamic>> grades) async {
+    state = state.copyWith(isSyncing: true);
+
+    if (!_network.isOnline) {
+      for (final g in grades) {
+        await _queue.enqueue(PendingOp(
+          id: '${DateTime.now().millisecondsSinceEpoch}_grade_${g['lessonId']}_${g['cadetId']}',
+          method: 'PUT',
+          path: '/lessons/${g['lessonId']}/grades/${g['cadetId']}',
+          data: g,
+          createdAt: DateTime.now(),
+        ));
+      }
+      state = state.copyWith(
+        isSyncing: false,
+        syncMessage: 'В черзі (${_queue.state} операцій)',
+      );
+      return;
+    }
+
+    try {
+      await _repo.batchGrades(grades);
+      state = state.copyWith(isSyncing: false, syncMessage: '✓ Збережено');
+    } catch (e) {
+      state = state.copyWith(isSyncing: false, error: e.toString());
+    }
+  }
+
+  // ── Заняття CRUD (тільки онлайн — структурні зміни) ──────────────────────
+
+  Future<void> createLesson({
+    required int journalId,
+    required Map<String, dynamic> data,
+  }) async {
+    if (!_network.isOnline) {
+      state = state.copyWith(
+          error: "Немає з'єднання. Спробуйте при підключенні.");
+      return;
+    }
+    try {
+      final lesson = await _repo.createLesson(journalId: journalId, data: data);
+      state = state.copyWith(
+        lessons: [...state.lessons, lesson],
+        syncMessage: '✓ Заняття створено',
+      );
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> updateLesson({
+    required int lessonId,
+    required Map<String, dynamic> data,
+  }) async {
+    if (!_network.isOnline) {
+      state = state.copyWith(
+          error: "Немає з'єднання. Спробуйте при підключенні.");
+      return;
+    }
+    try {
+      final updated = await _repo.updateLesson(lessonId: lessonId, data: data);
+      state = state.copyWith(
+        lessons: state.lessons
+            .map((l) => l.id == lessonId ? updated : l)
+            .toList(),
+        syncMessage: '✓ Заняття оновлено',
+      );
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> deleteLesson(int lessonId) async {
+    if (!_network.isOnline) {
+      state = state.copyWith(
+          error: "Немає з'єднання. Спробуйте при підключенні.");
+      return;
+    }
+    try {
+      await _repo.deleteLesson(lessonId);
+      state = state.copyWith(
+        lessons: state.lessons.where((l) => l.id != lessonId).toList(),
+        syncMessage: '✓ Заняття видалено',
+      );
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
 }
 
-// ─── Provider (ручний) ────────────────────────────────────────────────────────
+// ─── Provider ─────────────────────────────────────────────────────────────────
 
 final gradeJournalViewModelProvider =
     StateNotifierProvider<GradeJournalViewModel, JournalState>((ref) {
   return GradeJournalViewModel(
-    ref.read(appDatabaseProvider),
-    ref.read(syncServiceProvider),
+    ref.read(gradesRepositoryProvider),
+    ref.read(localCacheProvider),
+    ref.read(offlineQueueProvider.notifier),
     ref.read(networkMonitorProvider),
   );
 });

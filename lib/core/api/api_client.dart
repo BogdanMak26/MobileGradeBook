@@ -32,12 +32,26 @@ class _AuthInterceptor extends Interceptor {
     final token = await _authService.getValidAccessToken();
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
+      print('[API] ${options.method} ${options.uri} — token присутній');
+    } else {
+      print('[API] ${options.method} ${options.uri} — ⚠️ токен відсутній!');
     }
     handler.next(options);
   }
 
   @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    print('[API] RESPONSE ${response.statusCode} ${response.requestOptions.uri}');
+    print('[API] RESPONSE body: ${response.data}');
+    handler.next(response);
+  }
+
+  @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
+    print('[API] ERROR ${err.response?.statusCode} ${err.requestOptions.uri}');
+    print('[API] ERROR body: ${err.response?.data}');
+    print('[API] ERROR headers: ${err.response?.headers}');
+
     if (err.response?.statusCode == 401 && !_isRefreshing) {
       _isRefreshing = true;
       try {

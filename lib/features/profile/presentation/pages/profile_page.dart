@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/mock/mock_data.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -21,9 +22,26 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
   late Animation<Offset> _headerSlide;
   late Animation<double> _bodyFade;
 
+  late String _firstName;
+  late String _lastName;
+  late String? _rank;
+  late String? _position;
+  String _phone = '';
+  String? _birthDate;
+  String _gender = 'Чоловік';
+
   @override
   void initState() {
     super.initState();
+    final auth = ref.read(authViewModelProvider);
+    final user = auth.role == 'CADET'
+        ? MockDataProvider.cadetUser
+        : MockDataProvider.currentUser;
+    _firstName = user.name;
+    _lastName = user.surname;
+    _rank = user.rank;
+    _position = user.position;
+
     _ctrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
     _headerFade = CurvedAnimation(
@@ -53,7 +71,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
         ? MockDataProvider.cadetUser
         : MockDataProvider.currentUser;
 
-    final initials = user.fullName.trim().split(' ').take(2)
+    final displayName = '$_lastName $_firstName'.trim();
+    final initials = displayName.split(' ').take(2)
         .map((w) => w.isNotEmpty ? w[0] : '').join().toUpperCase();
 
     return Scaffold(
@@ -105,7 +124,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold)),
                             const Spacer(),
-                            const SizedBox(width: 34),
+                            GestureDetector(
+                              onTap: () => _showEditDialog(context, user),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.edit_outlined,
+                                    color: Colors.white, size: 18),
+                              ),
+                            ),
                           ]),
                           const SizedBox(height: 24),
 
@@ -142,7 +172,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                           const SizedBox(height: 14),
 
                           // Ім'я
-                          Text(user.fullName,
+                          Text(displayName,
                               style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
@@ -190,21 +220,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Посада / звання
-                    if (user.rank != null || user.position != null) ...[
+                    if (_rank != null || _position != null) ...[
                       _SectionHeader(
                           icon: Icons.military_tech_rounded,
                           title: 'Посада'),
                       _InfoCard(items: [
-                        if (user.rank != null)
+                        if (_rank != null)
                           _InfoRow(
                               icon: Icons.star_outline,
                               label: 'Звання',
-                              value: user.rank!),
-                        if (user.position != null)
+                              value: _rank!),
+                        if (_position != null)
                           _InfoRow(
                               icon: Icons.badge_outlined,
                               label: 'Посада',
-                              value: user.position!),
+                              value: _position!),
                       ]),
                       const SizedBox(height: 16),
                     ],
@@ -258,7 +288,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                           icon: Icons.notifications_outlined,
                           label: 'Сповіщення',
                           iconColor: const Color(0xFF0284C7),
-                          onTap: () {}),
+                          onTap: () => context.push('/notifications')),
                       _SettingsItemData(
                           icon: Icons.language_rounded,
                           label: 'Мова',
@@ -294,10 +324,299 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
     );
   }
 
-  void _confirmLogout(BuildContext context, WidgetRef ref) {
-    showDialog(
+  static const _allRanks = [
+    'Працівник ЗСУ',
+    'Солдат',
+    'Старший солдат',
+    'Молодший сержант',
+    'Сержант',
+    'Старший сержант',
+    'Головний сержант',
+    'Штаб-сержант',
+    'Майстер-сержант',
+    'Старший майстер-сержант',
+    'Головний майстер-сержант',
+    'Молодший лейтенант',
+    'Лейтенант',
+    'Старший лейтенант',
+    'Капітан',
+    'Майор',
+    'Підполковник',
+    'Полковник',
+    'Бригадний генерал',
+    'Генерал-майор',
+  ];
+
+  static const _positionGroups = <(String, List<String>)>[
+    ('Курсанти та слухачі', [
+      'Курсант', 'Слухач', 'Журналіст',
+      'Командир відділення', 'Командир групи',
+    ]),
+    ('Командний склад курсу', [
+      'Головний сержант курсу', 'Начальник навчального курсу',
+      'Курсовий офіцер', 'Старший помічник',
+    ]),
+    ('Науково-педагогічний склад', [
+      'Викладач', 'Старший викладач', 'Доцент', 'Професор',
+      'Заступник начальника кафедри', 'Начальник кафедри',
+    ]),
+    ('Наукові співробітники', [
+      'Провідний науковий співробітник',
+      'Старший науковий співробітник',
+    ]),
+    ('Факультет', [
+      'Заступник начальника факультету з навчальної роботи',
+      'Начальник факультету',
+    ]),
+    ('Навчальний відділ', [
+      'Заступник начальника НВ', 'Ст. помічник начальника НВ',
+      'Помічник начальника НВ',
+      'Заступник начальника навчального відділу',
+      'Начальник навчального відділу',
+    ]),
+    ('ГОСДН', ['Начальник ГОСДН', 'Ст.офіцер ГОСДН']),
+    ('НМК', ['Завідувач НМ кабінетом', 'Методист НМК']),
+    ('Керівництво інституту', [
+      'Начальник інституту',
+      'Заступник начальника інституту з навчальної роботи',
+      'ЗНІ з логістики',
+      'Начальник відділу контролю якості освіти',
+      'Начальник відділу ЗЯОДВО',
+    ]),
+  ];
+
+  static const _genders = ['Чоловік', 'Жінка'];
+
+  void _showEditDialog(BuildContext context, MockUser user) {
+    final isCadet = user.role == 'CADET';
+    final lastNameCtrl  = TextEditingController(text: _lastName);
+    final firstNameCtrl = TextEditingController(text: _firstName);
+    final phoneCtrl     = TextEditingController(text: _phone);
+
+    final allPositions = _positionGroups
+        .expand((g) => g.$2)
+        .toList();
+
+    String selectedGender = _gender;
+    String? selectedRank  = (_rank != null && _allRanks.contains(_rank))
+        ? _rank : _allRanks.first;
+    String? selectedPos   = (_position != null && allPositions.contains(_position))
+        ? _position : allPositions.first;
+    String? selectedBirth = _birthDate;
+
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Drag handle
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Редагування профілю',
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textDark)),
+
+                  // ── Основна інформація ──────────────────────────────
+                  const SizedBox(height: 20),
+                  _SheetSection(title: 'Основна інформація'),
+                  const SizedBox(height: 12),
+
+                  Row(children: [
+                    Expanded(child: _EditField(
+                        controller: firstNameCtrl, label: "ІМ'Я")),
+                    const SizedBox(width: 12),
+                    Expanded(child: _EditField(
+                        controller: lastNameCtrl, label: 'ПРІЗВИЩЕ')),
+                  ]),
+                  const SizedBox(height: 12),
+
+                  // Email — НЕ редагується
+                  _NonEditableField(label: 'EMAIL', value: user.email),
+                  const SizedBox(height: 12),
+
+                  Row(children: [
+                    Expanded(child: _EditField(
+                        controller: phoneCtrl,
+                        label: 'ТЕЛЕФОН',
+                        keyboard: TextInputType.phone)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DropdownField<String>(
+                        label: 'СТАТЬ',
+                        value: selectedGender,
+                        items: _genders,
+                        onChanged: (v) =>
+                            setSheet(() => selectedGender = v!),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+
+                  // Дата народження
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: DateTime(2000),
+                        firstDate: DateTime(1950),
+                        lastDate: DateTime.now(),
+                        locale: const Locale('uk'),
+                      );
+                      if (picked != null) {
+                        setSheet(() => selectedBirth =
+                            '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}');
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'ДАТА НАРОДЖЕННЯ',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(10))),
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        suffixIcon: Icon(Icons.calendar_today_outlined,
+                            size: 18),
+                      ),
+                      child: Text(
+                        selectedBirth ?? 'дд.мм.рррр',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: selectedBirth != null
+                              ? AppTheme.textDark
+                              : AppTheme.textLight,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ── Навчальна / Службова інформація ────────────────
+                  const SizedBox(height: 20),
+                  _SheetSection(
+                      title: isCadet
+                          ? 'Навчальна інформація'
+                          : 'Службова інформація'),
+                  const SizedBox(height: 12),
+
+                  if (isCadet) ...[
+                    Row(children: [
+                      Expanded(child: _NonEditableField(
+                          label: 'НАВЧАЛЬНА ГРУПА',
+                          value: user.groupName ?? '—')),
+                      const SizedBox(width: 12),
+                      Expanded(child: _NonEditableField(
+                          label: 'ФАКУЛЬТЕТ',
+                          value: 'Факультет ІТ')),
+                    ]),
+                    const SizedBox(height: 12),
+                  ] else ...[
+                    _NonEditableField(
+                        label: 'КАФЕДРА',
+                        value: user.kafedraName ?? '—'),
+                    const SizedBox(height: 12),
+                  ],
+
+                  _DropdownField<String>(
+                    label: 'ЗВАННЯ',
+                    value: selectedRank,
+                    items: _allRanks,
+                    onChanged: (v) => setSheet(() => selectedRank = v),
+                  ),
+                  const SizedBox(height: 12),
+                  _GroupedPositionDropdown(
+                    label: 'ПОСАДА',
+                    value: selectedPos,
+                    groups: _positionGroups,
+                    onChanged: (v) => setSheet(() => selectedPos = v),
+                  ),
+
+                  // ── Кнопки ─────────────────────────────────────────
+                  const SizedBox(height: 24),
+                  Row(children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Скасувати'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final newLast  = lastNameCtrl.text.trim();
+                          final newFirst = firstNameCtrl.text.trim();
+                          if (newLast.isEmpty || newFirst.isEmpty) return;
+
+                          Navigator.pop(ctx);
+                          setState(() {
+                            _lastName  = newLast;
+                            _firstName = newFirst;
+                            _phone     = phoneCtrl.text.trim();
+                            _gender    = selectedGender;
+                            _birthDate = selectedBirth;
+                            _rank      = selectedRank;
+                            _position  = selectedPos;
+                          });
+                          ref
+                              .read(authViewModelProvider.notifier)
+                              .updateProfile(
+                                  fullName: '$newLast $newFirst');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Зберегти',
+                            style:
+                                TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmLogout(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16)),
         title: const Text('Вийти?',
@@ -306,13 +625,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
             const Text('Ви впевнені, що хочете вийти з системи?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Скасувати')),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ref.read(authViewModelProvider.notifier).logout();
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFDC2626),
               foregroundColor: Colors.white,
@@ -324,6 +640,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
         ],
       ),
     );
+    // logout викликається тільки після повного закриття діалогу
+    if (confirmed == true && context.mounted) {
+      ref.read(authViewModelProvider.notifier).logout();
+    }
   }
 }
 
@@ -522,6 +842,215 @@ class _SettingsCard extends StatelessWidget {
             if (!isLast) const Divider(height: 1, indent: 62),
           ]);
         }).toList(),
+      ),
+    );
+  }
+}
+
+// ── Edit helpers ──────────────────────────────────────────────────────────────
+
+class _SheetSection extends StatelessWidget {
+  final String title;
+  const _SheetSection({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title,
+          style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textDark)),
+      const SizedBox(height: 6),
+      Container(height: 2, width: 32, color: AppTheme.primary),
+    ]);
+  }
+}
+
+class _EditField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final TextInputType keyboard;
+  const _EditField({
+    required this.controller,
+    required this.label,
+    this.keyboard = TextInputType.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboard,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppTheme.border)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppTheme.primary, width: 1.5)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      ),
+    );
+  }
+}
+
+class _NonEditableField extends StatelessWidget {
+  final String label;
+  final String value;
+  const _NonEditableField({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.primary.withOpacity(0.4), width: 1.5),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textMid)),
+        const SizedBox(height: 4),
+        Text(value,
+            style: const TextStyle(
+                fontSize: 14,
+                color: AppTheme.textMid,
+                fontStyle: FontStyle.italic)),
+        const SizedBox(height: 2),
+        const Text('(недоступно для редагування)',
+            style: TextStyle(
+                fontSize: 10,
+                color: AppTheme.textLight,
+                fontStyle: FontStyle.italic)),
+      ]),
+    );
+  }
+}
+
+class _DropdownField<T> extends StatelessWidget {
+  final String label;
+  final T? value;
+  final List<T> items;
+  final ValueChanged<T?> onChanged;
+  const _DropdownField({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+          style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
+          items: items
+              .map((e) => DropdownMenuItem<T>(
+                    value: e,
+                    child: Text(e.toString()),
+                  ))
+              .toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Grouped position dropdown ─────────────────────────────────────────────────
+
+class _GroupedPositionDropdown extends StatelessWidget {
+  final String label;
+  final String? value;
+  final List<(String, List<String>)> groups;
+  final ValueChanged<String?> onChanged;
+
+  const _GroupedPositionDropdown({
+    required this.label,
+    required this.value,
+    required this.groups,
+    required this.onChanged,
+  });
+
+  List<DropdownMenuItem<String>> _buildItems() {
+    final items = <DropdownMenuItem<String>>[];
+    for (final (groupName, positions) in groups) {
+      // Group header — not selectable
+      items.add(DropdownMenuItem<String>(
+        value: '__group__$groupName',
+        enabled: false,
+        child: Container(
+          color: const Color(0xFFF8FAFC),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Text(
+            groupName,
+            style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textMid),
+          ),
+        ),
+      ));
+      for (final pos in positions) {
+        items.add(DropdownMenuItem<String>(
+          value: pos,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Text(pos,
+                style: const TextStyle(
+                    fontSize: 13, color: AppTheme.textDark)),
+          ),
+        ));
+      }
+    }
+    return items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+          style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
+          items: _buildItems(),
+          onChanged: (v) {
+            if (v != null && !v.startsWith('__group__')) {
+              onChanged(v);
+            }
+          },
+        ),
       ),
     );
   }
