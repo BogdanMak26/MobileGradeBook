@@ -1,8 +1,11 @@
 // lib/features/profile/presentation/pages/profile_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:local_auth/local_auth.dart';
+import '../../../../core/auth/biometric_preferences.dart';
 import '../../../../core/mock/mock_data.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -289,6 +292,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                           label: 'Сповіщення',
                           iconColor: const Color(0xFF0284C7),
                           onTap: () => context.push('/notifications')),
+                    ]),
+                    const SizedBox(height: 8),
+                    _BiometricSettingsTile(role: auth.role ?? ''),
+                    const SizedBox(height: 8),
+                    _SettingsCard(items: [
                       _SettingsItemData(
                           icon: Icons.language_rounded,
                           label: 'Мова',
@@ -744,6 +752,93 @@ class _InfoCard extends StatelessWidget {
               const Divider(height: 1, indent: 62),
           ]);
         }).toList(),
+      ),
+    );
+  }
+}
+
+// ── Biometric Settings Tile ───────────────────────────────────────────────────
+
+class _BiometricSettingsTile extends ConsumerWidget {
+  final String role;
+  const _BiometricSettingsTile({required this.role});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bio = ref.watch(biometricProvider);
+
+    if (!bio.isInitialized || !bio.canUse) return const SizedBox.shrink();
+
+    final color = const Color(0xFF7C3AED);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              bio.primaryType == BiometricType.face
+                  ? Icons.face_outlined
+                  : Icons.fingerprint,
+              color: color,
+              size: 17,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Біометричний вхід',
+                    style: TextStyle(
+                        color: AppTheme.textDark,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14)),
+                Text(bio.typeLabel,
+                    style: const TextStyle(
+                        color: AppTheme.textMid, fontSize: 11)),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: bio.isEnabled,
+            activeColor: color,
+            onChanged: (v) async {
+              HapticFeedback.selectionClick();
+              final notifier = ref.read(biometricProvider.notifier);
+              if (v) {
+                final ok = await notifier.enable(role: role);
+                if (!ok && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Не вдалося увімкнути біометрію'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              } else {
+                await notifier.disable();
+              }
+            },
+          ),
+        ]),
       ),
     );
   }

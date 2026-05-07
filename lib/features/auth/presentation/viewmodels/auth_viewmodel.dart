@@ -210,6 +210,26 @@ class AuthViewModel extends StateNotifier<AuthState> {
     }
   }
 
+  // Вхід після успішної біометричної аутентифікації
+  Future<bool> loginWithBiometric({String? savedRole}) async {
+    state = state.copyWith(status: AuthStatus.loading, errorMessage: null);
+    try {
+      // Спочатку перевіряємо реальну сесію (refresh token)
+      final hasSession = await _authService.hasValidSession();
+      if (hasSession) {
+        await checkAuthStatus();
+        if (state.isAuthenticated) return true;
+      }
+      // Fallback: mock-вхід за збереженою роллю (dev режим)
+      if (savedRole != null) {
+        mockLogin(savedRole);
+        return true;
+      }
+    } catch (_) {}
+    state = state.copyWith(status: AuthStatus.unauthenticated);
+    return false;
+  }
+
   void updateProfile({String? fullName}) {
     if (fullName != null) {
       state = state.copyWith(fullName: fullName);

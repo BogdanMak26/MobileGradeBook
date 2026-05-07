@@ -1,7 +1,10 @@
 // lib/features/auth/presentation/pages/login_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/auth/biometric_preferences.dart';
+import '../../../../core/auth/biometric_service.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../viewmodels/auth_viewmodel.dart';
 
@@ -50,6 +53,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       // Симуляція затримки мережі
       await Future.delayed(const Duration(milliseconds: 1200));
       ref.read(authViewModelProvider.notifier).mockLogin(role);
+      ref.read(biometricProvider.notifier).saveRole(role);
     } catch (e) {
       setState(() {
         _errorMessage = 'Помилка авторизації. Спробуйте ще раз.';
@@ -61,6 +65,29 @@ class _LoginPageState extends ConsumerState<LoginPage>
           _loadingRole = null;
         });
       }
+    }
+  }
+
+  Future<void> _biometricLogin() async {
+    final biometric = ref.read(biometricProvider.notifier);
+    setState(() { _isLoading = true; _loadingRole = 'BIOMETRIC'; _errorMessage = null; });
+    try {
+      final result = await biometric.authenticate('Підтвердіть особу для входу в GradeBook');
+      if (result == BiometricResult.success) {
+        final ok = await ref.read(authViewModelProvider.notifier)
+            .loginWithBiometric(savedRole: biometric.savedRole);
+        if (!ok && mounted) {
+          setState(() => _errorMessage = 'Не вдалося відновити сесію. Увійдіть через Google.');
+        }
+      } else if (result == BiometricResult.lockedOut) {
+        setState(() => _errorMessage = 'Забагато спроб. Спробуйте пізніше.');
+      } else if (result != BiometricResult.cancelled) {
+        setState(() => _errorMessage = 'Біометрична аутентифікація не пройшла.');
+      }
+    } catch (_) {
+      if (mounted) setState(() => _errorMessage = 'Помилка біометрії. Спробуйте увійти через Google.');
+    } finally {
+      if (mounted) setState(() { _isLoading = false; _loadingRole = null; });
     }
   }
 
@@ -216,6 +243,26 @@ class _LoginPageState extends ConsumerState<LoginPage>
                           ),
                           const SizedBox(height: 16),
                         ],
+
+                        // Біометричний вхід (тільки якщо доступний і увімкнений)
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final bio = ref.watch(biometricProvider);
+                            if (!bio.isInitialized || !bio.canUse || !bio.isEnabled) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _BiometricLoginButton(
+                                label: bio.typeLabel,
+                                primaryType: bio.primaryType,
+                                isLoading: _loadingRole == 'BIOMETRIC',
+                                disabled: _isLoading,
+                                onTap: _biometricLogin,
+                              ),
+                            );
+                          },
+                        ),
 
                         // Google Workspace вхід
                         _Section(
@@ -418,6 +465,99 @@ class _RoleButton extends StatelessWidget {
               else
                 const Icon(Icons.chevron_right,
                     color: AppTheme.textLight, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BiometricLoginButton extends StatelessWidget {
+  final String label;
+  final dynamic primaryType;
+  final bool isLoading;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  const _BiometricLoginButton({
+    required this.label,
+    required this.primaryType,
+    required this.onTap,
+    this.isLoading = false,
+    this.disabled = false,
+  });
+
+  IconData get _icon {
+    if (primaryType?.toString().contains('face') == true) {
+      return Icons.face_unlock_rounded;
+    }
+    return Icons.fingerprint_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: disabled && !isLoading ? 0.5 : 1.0,
+      duration: const Duration(milliseconds: 200),
+      child: GestureDetector(
+        onTap: disabled ? null : () {
+          HapticFeedback.mediumImpact();
+          onTap();
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF1E1B4B), Color(0xFF433F31)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF1E1B4B).withOpacity(0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isLoading)
+                const SizedBox(
+                  width: 22, height: 22,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.5, color: Colors.white),
+                )
+              else
+                Icon(_icon, color: Colors.white, size: 26),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isLoading ? 'Перевірка...' : 'Увійти через $label',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    'Швидкий вхід без пароля',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.65),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
