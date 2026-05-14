@@ -24,7 +24,6 @@ class NotifKey {
   static const beforeClassReminder  = 'notif_before_class';
   static const beforeClassTime      = 'notif_before_class_time'; // '15m' | '30m' | '1h'
   static const myScheduleChanges    = 'notif_my_schedule';
-  static const newCadets            = 'notif_new_cadets';
 
   // DEPARTMENT_HEAD
   static const weeklyDigest                = 'notif_weekly_digest';
@@ -103,7 +102,6 @@ class NotificationSettings {
             NotifKey.beforeClassReminder: true,
             NotifKey.myScheduleChanges:   true,
             NotifKey.classCancellation:   true,
-            NotifKey.newCadets:           false,
           },
           options: {NotifKey.beforeClassTime: '15m'},
         );

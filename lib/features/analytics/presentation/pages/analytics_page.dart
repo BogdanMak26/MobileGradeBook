@@ -2,20 +2,54 @@
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../core/utils/app_constants.dart';
+import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 
-class AnalyticsPage extends StatefulWidget {
+class AnalyticsPage extends ConsumerStatefulWidget {
   const AnalyticsPage({super.key});
 
   @override
-  State<AnalyticsPage> createState() => _AnalyticsPageState();
+  ConsumerState<AnalyticsPage> createState() => _AnalyticsPageState();
 }
 
-class _AnalyticsPageState extends State<AnalyticsPage>
+class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
   String _search = '';
-  final String _group = '221';
+
+  // Фільтри
+  String? _selectedFaculty;
+  String? _selectedCourse;
+  String? _selectedSemester;
+  String? _selectedGroup;
+
+  static const _faculties = [
+    'Факультет інформаційних технологій',
+    'Факультет кібербезпеки',
+  ];
+
+  static const _courses = ['1 курс', '2 курс', '3 курс', '4 курс'];
+
+  static const _semestersByCourse = {
+    '1 курс': ['1 семестр', '2 семестр'],
+    '2 курс': ['3 семестр', '4 семестр'],
+    '3 курс': ['5 семестр', '6 семестр'],
+    '4 курс': ['7 семестр', '8 семестр'],
+  };
+
+  static const _groupsByFaculty = {
+    'Факультет інформаційних технологій': ['221', '222', '223'],
+    'Факультет кібербезпеки': ['321', '322'],
+  };
+
+  void _resetFilters() => setState(() {
+        _selectedFaculty = null;
+        _selectedCourse = null;
+        _selectedSemester = null;
+        _selectedGroup = null;
+      });
 
   static const List<Map<String, dynamic>> _allCadets = [
     {'name': 'Макаренко Богдан',   'position': 'Командир відділення', 'group': '221', 'specialty': "Комп'ютерні науки", 'score': 96, 'attendance': 97},
@@ -32,15 +66,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     {'name': 'Лисенко Микола',     'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 63, 'attendance': 82},
   ];
 
-  // Дисципліни для деталей кожного курсанта (мок)
   static List<Map<String, dynamic>> _disciplinesFor(String name) {
-    final colors = [
-      const Color(0xFF4ADE80), // зелений
-      const Color(0xFFA78BFA), // фіолетовий
-      const Color(0xFF60A5FA), // синій
-      const Color(0xFFFBBF24), // жовтий
-      const Color(0xFFF87171), // червоний
-    ];
     final disciplines = [
       'Захист інформації в телекомунікаційних системах',
       'Комп\'ютерні мережі та технології',
@@ -50,11 +76,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     ];
     return List.generate(disciplines.length, (i) => {
       'name': disciplines[i],
-      'score': 65 + (i * 7 + name.length * 3) % 35,
+      'score': 50 + (i * 11 + name.length * 5) % 65,
       'attendance': 78 + (i * 5 + name.length * 2) % 22,
       'points': '${60 + (i * 8 + name.length) % 38}/100',
       'semester': 8,
-      'color': colors[i % colors.length],
     });
   }
 
@@ -67,10 +92,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
-  List<Map<String, dynamic>> get _filtered => _allCadets
-      .where((c) => c['name'].toString().toLowerCase()
-          .contains(_search.toLowerCase()))
-      .toList();
+  List<Map<String, dynamic>> get _filtered => _allCadets.where((c) {
+        final matchSearch = c['name']
+            .toString()
+            .toLowerCase()
+            .contains(_search.toLowerCase());
+        final matchGroup =
+            _selectedGroup == null || c['group'] == _selectedGroup;
+        return matchSearch && matchGroup;
+      }).toList();
 
   void _showDetails(BuildContext context, Map<String, dynamic> cadet, int rank) {
     showDialog(
@@ -85,11 +115,53 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filtered;
+    final auth = ref.watch(authViewModelProvider);
+    final role = auth.role ?? '';
+    final isCadet = role == UserRole.cadet;
+    final fullName = auth.fullName ?? auth.email ?? 'Користувач';
+
+    // Курсант бачить тільки свою групу
+    final visibleCadets = isCadet
+        ? _allCadets.where((c) => c['group'] == '221').toList()
+        : _allCadets;
+
+    final filtered = visibleCadets.where((c) {
+      final matchSearch = c['name']
+          .toString()
+          .toLowerCase()
+          .contains(_search.toLowerCase());
+      final matchGroup =
+          _selectedGroup == null || c['group'] == _selectedGroup;
+      return matchSearch && (isCadet || matchGroup);
+    }).toList();
+
+    final roleIcon = _roleIcon(role);
+    final roleColor = _roleColor(role);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Рейтинг'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(roleIcon, size: 15, color: roleColor),
+                const SizedBox(width: 5),
+                Text(
+                  fullName,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: roleColor,
+                      fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.keyboard_arrow_down, size: 15, color: roleColor),
+              ],
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(3),
           child: Container(height: 3, color: AppTheme.primary),
@@ -97,7 +169,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       ),
       body: CustomScrollView(
         slivers: [
-          // ── Аналітика групи ──────────────────────────────────────────
+          // ── Заголовок ─────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: Container(
               color: Colors.white,
@@ -105,33 +177,76 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Аналітика групи',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+                  Text(
+                    isCadet ? 'Рейтинг групи' : 'Аналітика навчання',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textDark),
+                  ),
                   const SizedBox(height: 4),
-                  const Text('Рейтинг та статистика успішності вашої групи',
-                      style: TextStyle(color: AppTheme.textMid, fontSize: 13)),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.secondary, width: 1.5),
-                    ),
-                    child: Text('Група: $_group',
-                        style: const TextStyle(
+                  Text(
+                    isCadet
+                        ? 'Рейтинг успішності курсантів вашої групи'
+                        : 'Комплексна аналітика успішності курсантів',
+                    style: const TextStyle(
+                        color: AppTheme.textMid, fontSize: 13),
+                  ),
+                  if (isCadet) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: AppTheme.secondary, width: 1.5),
+                      ),
+                      child: const Text(
+                        'Група: 221',
+                        style: TextStyle(
                             color: AppTheme.secondary,
                             fontWeight: FontWeight.w600,
-                            fontSize: 14)),
-                  ),
+                            fontSize: 14),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
-          // ── Налаштування ─────────────────────────────────────────────
+          // ── Фільтри (тільки для адмін/викладач/нач. кафедри) ─────────
+          if (!isCadet) ...[
+            SliverToBoxAdapter(
+              child: _FiltersCard(
+                faculties: _faculties,
+                courses: _courses,
+                semestersByCourse: _semestersByCourse,
+                groupsByFaculty: _groupsByFaculty,
+                selectedFaculty: _selectedFaculty,
+                selectedCourse: _selectedCourse,
+                selectedSemester: _selectedSemester,
+                selectedGroup: _selectedGroup,
+                onFacultyChanged: (v) => setState(() {
+                  _selectedFaculty = v;
+                  _selectedGroup = null;
+                }),
+                onCourseChanged: (v) => setState(() {
+                  _selectedCourse = v;
+                  _selectedSemester = null;
+                }),
+                onSemesterChanged: (v) =>
+                    setState(() => _selectedSemester = v),
+                onGroupChanged: (v) => setState(() => _selectedGroup = v),
+                onReset: _resetFilters,
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          ],
+
+          // ── Вкладки ───────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -144,28 +259,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Налаштування',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold, color: AppTheme.textDark)),
-                  const SizedBox(height: 12),
-                  const Text('Група',
-                      style: TextStyle(color: AppTheme.textMid, fontSize: 13)),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Text(_group,
-                        style: const TextStyle(color: AppTheme.textDark, fontSize: 15)),
-                  ),
-                  const SizedBox(height: 16),
                   Container(
                     decoration: BoxDecoration(
-                        border: Border(bottom: BorderSide(color: AppTheme.border))),
+                        border: Border(
+                            bottom: BorderSide(color: AppTheme.border))),
                     child: TabBar(
                       controller: _tab,
                       onTap: (_) => setState(() {}),
@@ -173,43 +270,53 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       labelColor: AppTheme.primary,
                       unselectedLabelColor: AppTheme.textMid,
                       tabs: const [
-                        Tab(icon: Icon(Icons.menu_book_outlined, size: 18), text: 'Рейтинг'),
-                        Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Статистика'),
+                        Tab(
+                            icon: Icon(Icons.menu_book_outlined, size: 18),
+                            text: 'Рейтинг'),
+                        Tab(
+                            icon: Icon(Icons.bar_chart, size: 18),
+                            text: 'Статистика'),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
                   if (_tab.index == 0) ...[
-                  TextField(
-                    onChanged: (v) => setState(() => _search = v),
-                    decoration: InputDecoration(
-                      hintText: 'Пошук за прізвищем',
-                      prefixIcon: const Icon(Icons.search,
-                          color: AppTheme.textMid, size: 18),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {},
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF16A34A),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                    TextField(
+                      onChanged: (v) => setState(() => _search = v),
+                      decoration: const InputDecoration(
+                        hintText: 'Пошук за прізвищем',
+                        prefixIcon: Icon(Icons.search,
+                            color: AppTheme.textMid, size: 18),
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                       ),
-                      icon: const Icon(Icons.download, size: 18),
-                      label: const Text('Експорт в Excel',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text('Знайдено записів: ${filtered.length}',
-                      style: const TextStyle(color: AppTheme.textMid, fontSize: 13)),
+                    const SizedBox(height: 12),
+                    if (!isCadet) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {},
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF16A34A),
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.download, size: 18),
+                          label: const Text('Експорт в Excel',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15)),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Text('Знайдено записів: ${filtered.length}',
+                        style: const TextStyle(
+                            color: AppTheme.textMid, fontSize: 13)),
                   ],
                 ],
               ),
@@ -224,23 +331,363 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     children: [
                       ...List.generate(filtered.length, (i) {
                         final cadet = filtered[i];
-                        final rank = _allCadets.indexOf(cadet) + 1;
+                        final rank = visibleCadets.indexOf(cadet) + 1;
                         return Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                           child: _CadetRankCard(
                             cadet: cadet,
                             rank: rank,
-                            onTap: () => _showDetails(context, cadet, rank),
+                            onTap: () =>
+                                _showDetails(context, cadet, rank),
                           ),
                         );
                       }),
                       const SizedBox(height: 24),
                     ],
                   )
-                : _StatisticsTab(cadets: _allCadets),
+                : _StatisticsTab(cadets: visibleCadets),
           ),
         ],
       ),
+    );
+  }
+
+  static IconData _roleIcon(String role) {
+    switch (role) {
+      case UserRole.superAdmin:
+        return Icons.admin_panel_settings_outlined;
+      case UserRole.instructor:
+        return Icons.person_outline;
+      case UserRole.departmentHead:
+        return Icons.school_outlined;
+      default:
+        return Icons.military_tech_outlined;
+    }
+  }
+
+  static Color _roleColor(String role) {
+    switch (role) {
+      case UserRole.superAdmin:
+        return AppTheme.secondary;
+      case UserRole.instructor:
+        return const Color(0xFF0284C7);
+      case UserRole.departmentHead:
+        return const Color(0xFF059669);
+      default:
+        return AppTheme.textMid;
+    }
+  }
+}
+
+// ── Блок фільтрів ────────────────────────────────────────────────────────────
+
+class _FiltersCard extends StatelessWidget {
+  final List<String> faculties;
+  final List<String> courses;
+  final Map<String, List<String>> semestersByCourse;
+  final Map<String, List<String>> groupsByFaculty;
+
+  final String? selectedFaculty;
+  final String? selectedCourse;
+  final String? selectedSemester;
+  final String? selectedGroup;
+
+  final ValueChanged<String?> onFacultyChanged;
+  final ValueChanged<String?> onCourseChanged;
+  final ValueChanged<String?> onSemesterChanged;
+  final ValueChanged<String?> onGroupChanged;
+  final VoidCallback onReset;
+
+  const _FiltersCard({
+    required this.faculties,
+    required this.courses,
+    required this.semestersByCourse,
+    required this.groupsByFaculty,
+    required this.selectedFaculty,
+    required this.selectedCourse,
+    required this.selectedSemester,
+    required this.selectedGroup,
+    required this.onFacultyChanged,
+    required this.onCourseChanged,
+    required this.onSemesterChanged,
+    required this.onGroupChanged,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final availableGroups = selectedFaculty != null
+        ? groupsByFaculty[selectedFaculty] ?? []
+        : <String>[];
+    final availableSemesters = selectedCourse != null
+        ? semestersByCourse[selectedCourse] ?? []
+        : <String>[];
+    final hasFilters = selectedFaculty != null ||
+        selectedCourse != null ||
+        selectedSemester != null ||
+        selectedGroup != null;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Заголовок
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.secondary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.tune_rounded,
+                      size: 16, color: AppTheme.secondary),
+                ),
+                const SizedBox(width: 10),
+                const Text('Фільтри',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: AppTheme.textDark)),
+                const Spacer(),
+                if (hasFilters)
+                  GestureDetector(
+                    onTap: onReset,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: AppTheme.danger.withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.restart_alt,
+                              size: 13, color: AppTheme.danger),
+                          SizedBox(width: 4),
+                          Text('Скинути фільтри',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.danger,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  const Text('Скинути фільтри',
+                      style: TextStyle(
+                          fontSize: 12, color: AppTheme.textLight)),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Факультет
+                const Text('Факультет',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textDark)),
+                const SizedBox(height: 6),
+                _FilterDropdown(
+                  hint: 'Оберіть факультет',
+                  value: selectedFaculty,
+                  items: faculties,
+                  onChanged: onFacultyChanged,
+                ),
+                const SizedBox(height: 14),
+
+                // Курс
+                const Text('Курс',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textDark)),
+                const SizedBox(height: 6),
+                _FilterDropdown(
+                  hint: 'Оберіть курс',
+                  value: selectedCourse,
+                  items: courses,
+                  onChanged: onCourseChanged,
+                ),
+                const SizedBox(height: 14),
+
+                // Семестри
+                const Text('Семестри',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textDark)),
+                const SizedBox(height: 6),
+                if (availableSemesters.isEmpty)
+                  _FilterPlaceholder(
+                    text: selectedCourse == null
+                        ? 'Оберіть курс щоб побачити доступні семестри'
+                        : 'Немає доступних семестрів',
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: availableSemesters
+                        .map((s) => _FilterChip(
+                              label: s,
+                              selected: selectedSemester == s,
+                              onTap: () => onSemesterChanged(
+                                  selectedSemester == s ? null : s),
+                            ))
+                        .toList(),
+                  ),
+                const SizedBox(height: 14),
+
+                // Групи
+                const Text('Групи',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textDark)),
+                const SizedBox(height: 6),
+                if (availableGroups.isEmpty)
+                  _FilterPlaceholder(
+                    text: selectedFaculty == null
+                        ? 'Оберіть факультет щоб побачити доступні групи'
+                        : 'Немає доступних груп',
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: availableGroups
+                        .map((g) => _FilterChip(
+                              label: g,
+                              selected: selectedGroup == g,
+                              onTap: () => onGroupChanged(
+                                  selectedGroup == g ? null : g),
+                            ))
+                        .toList(),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterDropdown extends StatelessWidget {
+  final String hint;
+  final String? value;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+  const _FilterDropdown({
+    required this.hint,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      hint: Text(hint,
+          style: const TextStyle(color: AppTheme.textLight, fontSize: 14)),
+      decoration: InputDecoration(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppTheme.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppTheme.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide:
+              const BorderSide(color: AppTheme.secondary, width: 1.5),
+        ),
+        filled: true,
+        fillColor: AppTheme.surface,
+      ),
+      icon: const Icon(Icons.keyboard_arrow_down,
+          color: AppTheme.textMid, size: 20),
+      dropdownColor: Colors.white,
+      style: const TextStyle(color: AppTheme.textDark, fontSize: 14),
+      items: items
+          .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.secondary : AppTheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppTheme.secondary : AppTheme.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight:
+                selected ? FontWeight.bold : FontWeight.normal,
+            color: selected ? Colors.white : AppTheme.textDark,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterPlaceholder extends StatelessWidget {
+  final String text;
+  const _FilterPlaceholder({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+          fontSize: 12,
+          color: AppTheme.textLight,
+          fontStyle: FontStyle.italic),
     );
   }
 }
@@ -256,93 +703,112 @@ class _CadetRankCard extends StatelessWidget {
 
   Color _rankBg() {
     if (rank == 1) return const Color(0xFFFEF3C7);
-    if (rank == 2) return const Color(0xFFF3F4F6);
-    if (rank == 3) return const Color(0xFFFEF3C7);
+    if (rank == 2) return const Color(0xFFEFF6FF);
+    if (rank == 3) return const Color(0xFFFFF7ED);
     return const Color(0xFFF9FAFB);
   }
 
   Color _rankFg() {
     if (rank == 1) return const Color(0xFFD97706);
-    if (rank == 2) return const Color(0xFF6B7280);
+    if (rank == 2) return const Color(0xFF2563EB);
     if (rank == 3) return const Color(0xFF92400E);
     return AppTheme.textLight;
   }
 
   @override
   Widget build(BuildContext context) {
-    final score = cadet['score'] as int;
+    final score      = cadet['score'] as int;
     final attendance = cadet['attendance'] as int;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(color: AppTheme.border),
-          boxShadow: [BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 6, offset: const Offset(0, 2),
-          )],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            Container(
+              width: 28, height: 28,
+              decoration: BoxDecoration(color: _rankBg(), shape: BoxShape.circle),
+              alignment: Alignment.center,
+              child: Text('$rank',
+                  style: TextStyle(
+                      color: _rankFg(),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Text(cadet['name'] as String,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                              color: AppTheme.textDark)),
-                      const SizedBox(height: 2),
-                      Text(cadet['position'] as String,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppTheme.textMid)),
+                      Expanded(
+                        child: Text(cadet['name'] as String,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: AppTheme.textDark),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      const SizedBox(width: 8),
+                      _RatingPill(value: score, isScore: true),
+                      const SizedBox(width: 5),
+                      _RatingPill(value: attendance, isScore: false),
                     ],
                   ),
-                ),
-                Container(
-                  width: 30, height: 30,
-                  decoration: BoxDecoration(
-                      color: _rankBg(), shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child: Text('$rank',
-                      style: TextStyle(
-                          color: _rankFg(),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13)),
-                ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    '${cadet['position']} • ${cadet['specialty']} • Гр. ${cadet['group']}',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textMid),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            _InfoRow(label: 'Спеціальність:', value: cadet['specialty'] as String, bold: true),
-            const SizedBox(height: 6),
-            _InfoRow(label: 'Група:', value: cadet['group'] as String, bold: true),
-            const SizedBox(height: 6),
-            Row(children: [
-              const Expanded(child: Text('Успішність:',
-                  style: TextStyle(color: AppTheme.textMid, fontSize: 13))),
-              _PercentBadge(value: score),
-            ]),
-            const SizedBox(height: 6),
-            Row(children: [
-              const Expanded(child: Text('Відвідуваність:',
-                  style: TextStyle(color: AppTheme.textMid, fontSize: 13))),
-              _PercentBadge(value: attendance),
-            ]),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _RatingPill extends StatelessWidget {
+  final int value;
+  final bool isScore;
+  const _RatingPill({required this.value, required this.isScore});
+
+  Color get _fg {
+    if (!isScore) return const Color(0xFF0284C7);
+    if (value >= 75) return const Color(0xFF16A34A);
+    if (value >= 60) return const Color(0xFFD97706);
+    return const Color(0xFFDC2626);
+  }
+
+  Color get _bg {
+    if (!isScore) return const Color(0xFFE0F2FE);
+    if (value >= 75) return const Color(0xFFDCFCE7);
+    if (value >= 60) return const Color(0xFFFEF3C7);
+    return const Color(0xFFFEE2E2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: _bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text('$value%',
+          style: TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w700, color: _fg)),
     );
   }
 }
@@ -360,30 +826,71 @@ class _CadetDetailsDialog extends StatelessWidget {
     required this.disciplines,
   });
 
+  String get _initials {
+    final parts = (cadet['name'] as String).split(' ');
+    return parts.take(2).map((w) => w.isEmpty ? '' : w[0]).join();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final overallScore = cadet['score'] as int;
+
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
+      backgroundColor: const Color(0xFFF1F5F9),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Заголовок ──────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 12, 12),
+          // ── Кольорова шапка ────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(18, 20, 12, 20),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
             child: Row(
               children: [
-                Expanded(
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.white.withOpacity(0.2),
                   child: Text(
-                    'Деталі рейтингу: ${cadet['name']}',
+                    _initials,
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppTheme.textDark),
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        cadet['name'] as String,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Row(children: [
+                        _HeaderChip(label: '#$rank у групі'),
+                        const SizedBox(width: 8),
+                        _HeaderChip(label: 'Рейтинг: $overallScore%'),
+                      ]),
+                    ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: AppTheme.textMid),
+                  icon: const Icon(Icons.close, color: Colors.white70, size: 22),
                   onPressed: () => Navigator.pop(context),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -391,50 +898,111 @@ class _CadetDetailsDialog extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(height: 1),
 
           // ── Контент (скролиться) ────────────────────────────────────
           Flexible(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Інформація про курсанта
+                  // Інфо-плитки
+                  Row(children: [
+                    _InfoTile(
+                      icon: Icons.group_outlined,
+                      label: 'Група',
+                      value: cadet['group'] as String,
+                    ),
+                    const SizedBox(width: 8),
+                    _InfoTile(
+                      icon: Icons.calendar_today_outlined,
+                      label: 'Рік вступу',
+                      value: '2022',
+                    ),
+                  ]),
+                  const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: AppTheme.surface,
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: AppTheme.border),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Група: ${cadet['group']}',
-                            style: const TextStyle(
-                                fontSize: 14, color: AppTheme.textDark)),
-                        const SizedBox(height: 6),
-                        const Text('Факультет: Факультет інформаційних технологій',
-                            style: TextStyle(fontSize: 14, color: AppTheme.textDark)),
-                        const SizedBox(height: 6),
-                        Text('Спеціальність: ${cadet['specialty']}',
-                            style: const TextStyle(
-                                fontSize: 14, color: AppTheme.textDark)),
-                        const SizedBox(height: 6),
-                        const Text('Рік вступу: 2022',
-                            style: TextStyle(fontSize: 14, color: AppTheme.textDark)),
-                      ],
-                    ),
+                    child: Row(children: [
+                      const Icon(Icons.school_outlined,
+                          size: 16, color: AppTheme.textMid),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Спеціальність',
+                                style: TextStyle(
+                                    fontSize: 11, color: AppTheme.textMid)),
+                            const SizedBox(height: 2),
+                            Text(cadet['specialty'] as String,
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textDark)),
+                          ],
+                        ),
+                      ),
+                    ]),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.business_outlined,
+                          size: 16, color: AppTheme.textMid),
+                      const SizedBox(width: 10),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Факультет',
+                              style: TextStyle(
+                                  fontSize: 11, color: AppTheme.textMid)),
+                          SizedBox(height: 2),
+                          Text('Факультет інформаційних технологій',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textDark)),
+                        ],
+                      ),
+                    ]),
+                  ),
+                  const SizedBox(height: 20),
 
-                  // Дисципліни
-                  Text('Дисципліни',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textDark)),
+                  // Заголовок секції дисциплін
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4F46E5).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.library_books_outlined,
+                          size: 16, color: Color(0xFF4F46E5)),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('Дисципліни',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: AppTheme.textDark)),
+                  ]),
+                  const SizedBox(height: 8),
+                  // Легенда кольорів
+                  const _ScoreLegend(),
                   const SizedBox(height: 12),
 
                   ...disciplines.map((d) => _DisciplineCard(discipline: d)),
@@ -448,131 +1016,318 @@ class _CadetDetailsDialog extends StatelessWidget {
   }
 }
 
-// ── Картка дисципліни в діалозі ───────────────────────────────────────────────
+// ── Плитка інфо ──────────────────────────────────────────────────────────────
 
-class _DisciplineCard extends StatelessWidget {
-  final Map<String, dynamic> discipline;
-  const _DisciplineCard({required this.discipline});
+class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _InfoTile(
+      {required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    final color = discipline['color'] as Color;
-    final score = discipline['score'] as int;
-    final attendance = discipline['attendance'] as int;
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.25),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(discipline['name'] as String,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: AppTheme.textDark)),
-          const SizedBox(height: 10),
-          Row(children: [
-            const Text('Успішність: ',
-                style: TextStyle(fontSize: 13, color: AppTheme.textDark)),
-            _SmallBadge(value: '$score%', color: const Color(0xFF16A34A)),
-            const SizedBox(width: 12),
-            const Text('Відвідування: ',
-                style: TextStyle(fontSize: 13, color: AppTheme.textDark)),
-            _SmallBadge(
-                value: '$attendance%',
-                color: attendance >= 90
-                    ? const Color(0xFF16A34A)
-                    : const Color(0xFF7C3AED)),
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Row(children: [
+          Icon(icon, size: 16, color: AppTheme.textMid),
+          const SizedBox(width: 8),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                style: const TextStyle(fontSize: 10, color: AppTheme.textMid)),
+            const SizedBox(height: 2),
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textDark)),
           ]),
-          const SizedBox(height: 6),
-          Text(
-            'Бали: ${discipline['points']}  Семестр: ${discipline['semester']}',
-            style: const TextStyle(fontSize: 13, color: AppTheme.textDark),
-          ),
-        ],
+        ]),
       ),
     );
   }
 }
 
-class _SmallBadge extends StatelessWidget {
-  final String value;
-  final Color color;
-  const _SmallBadge({required this.value, required this.color});
+// ── Чіп у шапці діалогу ──────────────────────────────────────────────────────
+
+class _HeaderChip extends StatelessWidget {
+  final String label;
+  const _HeaderChip({required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.4)),
       ),
-      child: Text(value,
+      child: Text(label,
           style: const TextStyle(
               color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold)),
+              fontSize: 11,
+              fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+// ── Легенда шкали успішності ──────────────────────────────────────────────────
+
+class _ScoreLegend extends StatelessWidget {
+  const _ScoreLegend();
+
+  static const _colors = [
+    Color(0xFF2563EB),
+    Color(0xFF16A34A),
+    Color(0xFF22C55E),
+    Color(0xFF84CC16),
+    Color(0xFFEA580C),
+    Color(0xFFDC2626),
+  ];
+
+  static const _labels = [
+    '>100%',
+    '90–100%',
+    '80–90%',
+    '65–80%',
+    '50–65%',
+    '<50%',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: List.generate(
+        _colors.length,
+        (i) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration:
+                  BoxDecoration(color: _colors[i], shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 4),
+            Text(_labels[i],
+                style:
+                    const TextStyle(fontSize: 10, color: AppTheme.textMid)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Картка дисципліни ─────────────────────────────────────────────────────────
+
+class _DisciplineCard extends StatelessWidget {
+  final Map<String, dynamic> discipline;
+  const _DisciplineCard({required this.discipline});
+
+  static Color _accentColor(int score) {
+    if (score > 100) return const Color(0xFF2563EB);
+    if (score >= 90) return const Color(0xFF16A34A);
+    if (score >= 80) return const Color(0xFF22C55E);
+    if (score >= 65) return const Color(0xFF84CC16);
+    if (score >= 50) return const Color(0xFFEA580C);
+    return const Color(0xFFDC2626);
+  }
+
+  static Color _bgColor(int score) {
+    if (score > 100) return const Color(0xFFEFF6FF);
+    if (score >= 90) return const Color(0xFFF0FDF4);
+    if (score >= 80) return const Color(0xFFF0FDF4);
+    if (score >= 65) return const Color(0xFFF7FEE7);
+    if (score >= 50) return const Color(0xFFFFF7ED);
+    return const Color(0xFFFEF2F2);
+  }
+
+  static String _scoreLabel(int score) {
+    if (score > 100) return 'Бонус';
+    if (score >= 90) return 'Відмінно';
+    if (score >= 80) return 'Добре';
+    if (score >= 65) return 'Задовільно';
+    if (score >= 50) return 'Слабо';
+    return 'Незадовільно';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final score = discipline['score'] as int;
+    final attendance = discipline['attendance'] as int;
+    final accent = _accentColor(score);
+    final bg = _bgColor(score);
+    final progress = (score / 100).clamp(0.0, 1.0);
+
+    final attendanceColor = attendance >= 90
+        ? const Color(0xFF0284C7)
+        : attendance >= 75
+            ? const Color(0xFF16A34A)
+            : const Color(0xFFEA580C);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withOpacity(0.3)),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Ліва кольорова смуга
+            Container(
+              width: 5,
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(14)),
+              ),
+            ),
+            // Контент
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Назва + бейдж статусу
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            discipline['name'] as String,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: AppTheme.textDark,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: accent,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _scoreLabel(score),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Прогрес-бар з відсотком
+                    Row(children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            backgroundColor: accent.withOpacity(0.15),
+                            valueColor: AlwaysStoppedAnimation<Color>(accent),
+                            minHeight: 7,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$score%',
+                        style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 10),
+                    // Статистика внизу
+                    Row(children: [
+                      _StatChip(
+                        icon: Icons.event_available_outlined,
+                        value: '$attendance%',
+                        label: 'Відвідуваність',
+                        color: attendanceColor,
+                      ),
+                      const SizedBox(width: 14),
+                      _StatChip(
+                        icon: Icons.grading_outlined,
+                        value: discipline['points'] as String,
+                        label: 'Бали',
+                        color: AppTheme.textDark,
+                      ),
+                      const Spacer(),
+                      Text(
+                        'Сем. ${discipline['semester']}',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppTheme.textMid),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+  const _StatChip(
+      {required this.icon,
+      required this.value,
+      required this.label,
+      required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 10, color: AppTheme.textMid)),
+        const SizedBox(height: 2),
+        Row(children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 3),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color)),
+        ]),
+      ],
     );
   }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool bold;
-  const _InfoRow({required this.label, required this.value, this.bold = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(children: [
-      Expanded(child: Text(label,
-          style: const TextStyle(color: AppTheme.textMid, fontSize: 13))),
-      Text(value,
-          style: TextStyle(
-              color: AppTheme.textDark,
-              fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
-              fontSize: 13)),
-    ]);
-  }
-}
-
-class _PercentBadge extends StatelessWidget {
-  final int value;
-  const _PercentBadge({required this.value});
-
-  Color get _bg {
-    if (value >= 90) return const Color(0xFFDCFCE7);
-    if (value >= 75) return const Color(0xFFDCFCE7);
-    if (value >= 60) return const Color(0xFFFEF9C3);
-    return const Color(0xFFFEE2E2);
-  }
-
-  Color get _fg {
-    if (value >= 90) return const Color(0xFF166534);
-    if (value >= 75) return const Color(0xFF166534);
-    if (value >= 60) return const Color(0xFF854D0E);
-    return const Color(0xFF991B1B);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-      decoration: BoxDecoration(color: _bg, borderRadius: BorderRadius.circular(20)),
-      child: Text('$value%',
-          style: TextStyle(color: _fg, fontWeight: FontWeight.bold, fontSize: 13)),
-    );
-  }
-}
 // STATISTICS TAB — insert after existing TabBar in analytics_page.dart
 
 // ── Статистика ────────────────────────────────────────────────────────────────

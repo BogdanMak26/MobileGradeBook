@@ -15,6 +15,7 @@ import '../../features/analytics/presentation/pages/analytics_page.dart';
 import '../../features/schedule/presentation/pages/schedule_page.dart';
 import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/groups/presentation/pages/my_group_page.dart';
+// AllGroupsPage is defined in my_group_page.dart
 import '../../features/admin/presentation/pages/admin_page.dart';
 import '../../features/notifications/presentation/pages/notifications_settings_page.dart';
 import '../../features/auth/presentation/viewmodels/auth_viewmodel.dart';
@@ -23,6 +24,7 @@ import '../../shared/theme/app_theme.dart';
 const _rootPaths = {
   '/dashboard', '/disciplines', '/analytics',
   '/grades', '/schedule', '/profile', '/journals',
+  '/groups', '/group', '/admin',
 };
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -48,19 +50,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, __, child) => MainShell(child: child),
         routes: [
           GoRoute(path: '/dashboard',   builder: (_, __) => const DashboardPage()),
-          GoRoute(path: '/disciplines', builder: (_, __) => const DisciplinesPage()),
-          GoRoute(path: '/journals',    builder: (_, __) => const JournalsPage()),
+          GoRoute(path: '/disciplines', builder: (_, __) => const _ToDashboard(child: DisciplinesPage())),
+          GoRoute(path: '/journals',    builder: (_, __) => const _ToDashboard(child: JournalsPage())),
           GoRoute(
             path: '/disciplines/:id/journal',
             builder: (_, state) =>
                 GradeJournalPage(disciplineId: state.pathParameters['id']!),
           ),
-          GoRoute(path: '/grades',    builder: (_, __) => const CadetGradesPage()),
-          GoRoute(path: '/analytics', builder: (_, __) => const AnalyticsPage()),
-          GoRoute(path: '/schedule',  builder: (_, __) => const SchedulePage()),
-          GoRoute(path: '/profile',   builder: (_, __) => const ProfilePage()),
-          GoRoute(path: '/group',     builder: (_, __) => const MyGroupPage()),
-          GoRoute(path: '/admin',     builder: (_, __) => const AdminPage()),
+          GoRoute(path: '/grades',    builder: (_, __) => const _ToDashboard(child: CadetGradesPage())),
+          GoRoute(path: '/analytics', builder: (_, __) => const _ToDashboard(child: AnalyticsPage())),
+          GoRoute(path: '/schedule',  builder: (_, __) => const _ToDashboard(child: SchedulePage())),
+          GoRoute(path: '/profile',   builder: (_, __) => const _ToDashboard(child: ProfilePage())),
+          GoRoute(path: '/group',     builder: (_, __) => const _ToDashboard(child: MyGroupPage())),
+          GoRoute(path: '/groups',    builder: (_, __) => const _ToDashboard(child: AllGroupsPage())),
+          GoRoute(path: '/admin',     builder: (_, __) => const _ToDashboard(child: AdminPage())),
         ],
       ),
     ],
@@ -100,43 +103,77 @@ class MainShell extends ConsumerStatefulWidget {
   ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends ConsumerState<MainShell> {
+class _MainShellState extends ConsumerState<MainShell>
+    with WidgetsBindingObserver {
+
+  @override
+  void initState() {
+    super.initState();
+    // Реєструємось останніми → в reversed-ітерації будемо першими
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // WidgetsBinding.handlePopRoute() викликає didPopRoute у зворотному порядку.
+  // Повертаємо true — подія вважається оброблена, SystemNavigator.pop() не буде.
+  @override
+  Future<bool> didPopRoute() async {
+    if (!mounted) return false;
+
+    final loc = GoRouterState.of(context).matchedLocation;
+    final router = GoRouter.of(context);
+
+    // Відкрито діалог або bottom sheet → закрити його
+    if (Navigator.of(context, rootNavigator: true).canPop()) {
+      Navigator.of(context, rootNavigator: true).pop();
+      return true;
+    }
+
+    // Підсторінка зі стеком (context.push) → назад
+    if (!_rootPaths.contains(loc) && router.canPop()) {
+      router.pop();
+      return true;
+    }
+
+    // Будь-яка вкладка навбару → на дашборд
+    if (loc != '/dashboard') {
+      context.go('/dashboard');
+      return true;
+    }
+
+    // Дашборд → запитати про вихід
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Вийти з додатку?'),
+        content: const Text('Закрити GradeBook?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Скасувати')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Вийти',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (shouldExit == true && mounted) SystemNavigator.pop();
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final role = ref.watch(authViewModelProvider.select((s) => s.role ?? ''));
-    final location = GoRouterState.of(context).matchedLocation;
-    final isRootTab = _rootPaths.contains(location);
 
-    return PopScope(
-      canPop: !isRootTab,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        if (location != '/dashboard') {
-          context.go('/dashboard');
-          return;
-        }
-        final shouldExit = await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Вийти з додатку?'),
-            content: const Text('Закрити GradeBook?'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Скасувати')),
-              TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Вийти',
-                      style: TextStyle(color: Colors.red))),
-            ],
-          ),
-        );
-        if (shouldExit == true) SystemNavigator.pop();
-      },
-      child: Scaffold(
-        body: widget.child,
-        bottomNavigationBar: _BottomNav(role: role),
-      ),
+    return Scaffold(
+      body: widget.child,
+      bottomNavigationBar: _BottomNav(role: role),
     );
   }
 }
@@ -338,7 +375,7 @@ class _MoreMenu extends ConsumerWidget {
             if (!isCadet) ...[
               _MenuItem(icon: Icons.people_outline, label: 'Навчальні групи',
                   color: Colors.white,
-                  onTap: () { Navigator.pop(context); context.go('/group'); }),
+                  onTap: () { Navigator.pop(context); context.go('/groups'); }),
               const Divider(color: Colors.white12, height: 1, indent: 56),
             ],
 
@@ -378,6 +415,24 @@ class _MoreMenu extends ConsumerWidget {
     );
   }
 }
+
+// ── Перехоплює свайп-назад на вкладках навбару → повертає на /dashboard ────────
+
+class _ToDashboard extends StatelessWidget {
+  final Widget child;
+  const _ToDashboard({required this.child});
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) context.go('/dashboard');
+    },
+    child: child,
+  );
+}
+
+// ── Пункт меню "Більше" ───────────────────────────────────────────────────────
 
 class _MenuItem extends StatelessWidget {
   final IconData icon;

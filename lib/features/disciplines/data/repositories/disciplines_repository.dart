@@ -23,9 +23,12 @@ class DisciplinesRepository {
     return list.map((e) => DisciplineModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  // ── Журнали дисципліни ───────────────────────────────────────────────────
+  // ── Журнали дисципліни (GET /journals?disciplineId={id}) ─────────────────
   Future<List<JournalModel>> getDisciplineJournals(int disciplineId) async {
-    final response = await _client.dio.get('/journals/discipline/$disciplineId');
+    final response = await _client.dio.get(
+      '/journals',
+      queryParameters: {'disciplineId': disciplineId},
+    );
     final list = response.data as List<dynamic>;
     return list.map((e) => JournalModel.fromJson(e as Map<String, dynamic>)).toList();
   }
@@ -38,6 +41,38 @@ class DisciplinesRepository {
     );
     final list = response.data as List<dynamic>;
     return list.map((e) => DisciplineModel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // ── CRUD дисциплін (адмін) ───────────────────────────────────────────────
+
+  Future<DisciplineModel> createDiscipline(Map<String, dynamic> data) async {
+    final response = await _client.dio.post('/disciplines', data: data);
+    return DisciplineModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<DisciplineModel> updateDiscipline(
+      int disciplineId, Map<String, dynamic> data) async {
+    final response =
+        await _client.dio.patch('/disciplines/$disciplineId', data: data);
+    return DisciplineModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteDiscipline(int disciplineId) async {
+    await _client.dio.delete('/disciplines/$disciplineId');
+  }
+
+  // ── Викладачі дисципліни ─────────────────────────────────────────────────
+
+  Future<void> addTeacher(int disciplineId, int teacherId) async {
+    await _client.dio.post(
+      '/disciplines/$disciplineId/teachers/$teacherId',
+    );
+  }
+
+  Future<void> removeTeacher(int disciplineId, int teacherId) async {
+    await _client.dio.delete(
+      '/disciplines/$disciplineId/teachers/$teacherId',
+    );
   }
 }
 

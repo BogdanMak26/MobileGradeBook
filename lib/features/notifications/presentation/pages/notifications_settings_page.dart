@@ -174,19 +174,6 @@ List<_NotifCategory> _categoriesForRole(String role) {
             ),
           ],
         ),
-        _NotifCategory(
-          icon: Icons.groups_rounded,
-          title: 'Курсанти',
-          color: const Color(0xFF4338CA),
-          items: [
-            _NotifItemData(
-              icon: Icons.person_add_rounded,
-              key: NotifKey.newCadets,
-              title: 'Нові курсанти в групах',
-              subtitle: 'Коли до ваших груп зараховують нових курсантів',
-            ),
-          ],
-        ),
       ];
 
     case UserRole.departmentHead:

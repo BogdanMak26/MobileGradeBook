@@ -4,7 +4,18 @@
       "Bash(flutter analyze *)",
       "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(flutter pub *)"
+      "Bash(flutter pub *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(flutter build *)",
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebookFront\" -Depth 0)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(Get-Content \"K:\\\\Diplom\\\\gradebookFront\\\\src\\\\features\\\\admin\\\\components\\\\UsersManagement.tsx\")",
+      "Bash(Select-Object -First 200)",
+      "Bash(Out-String)",
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook\" -Recurse -Filter \"*.java\")",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

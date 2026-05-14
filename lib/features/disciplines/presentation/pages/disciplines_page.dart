@@ -8,6 +8,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../../grades/presentation/pages/grade_journal_page.dart';
 import 'discipline_management_page.dart';
+import '../../../../shared/widgets/add_discipline_sheet.dart';
 
 // ── Mock journals per discipline ───────────────────────────────────────────────
 // journalId, groupId, groupName, disciplineName, semester, startDate, endDate, year
@@ -130,12 +131,17 @@ class _DisciplinesPageState extends ConsumerState<DisciplinesPage> {
                 ? _EmptyState(search: _search)
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    itemCount: disciplines.length,
-                    itemBuilder: (context, i) => _DisciplineCard(
-                      discipline: disciplines[i],
-                      isCadet: _isCadet(role),
-                      cadetGroupId: 221, // mock cadet group
-                    ),
+                    itemCount: disciplines.length + (_canManage(role) ? 1 : 0),
+                    itemBuilder: (context, i) {
+                      if (_canManage(role) && i == disciplines.length) {
+                        return const _AddDisciplineCard();
+                      }
+                      return _DisciplineCard(
+                        discipline: disciplines[i],
+                        isCadet: _isCadet(role),
+                        cadetGroupId: 221,
+                      );
+                    },
                   ),
           ),
         ],
@@ -336,6 +342,250 @@ class _JournalListPageState extends State<_JournalListPage> {
   String _search = '';
   bool _currentOnly = true;
 
+  static const _groups = <Map<String, dynamic>>[
+    {'id': 221, 'name': '221', 'specialty': "Комп'ютерні науки"},
+    {'id': 222, 'name': '222', 'specialty': "Комп'ютерні науки"},
+    {'id': 231, 'name': '231', 'specialty': 'ІСТ'},
+    {'id': 241, 'name': '241', 'specialty': 'Електроніка'},
+    {'id': 321, 'name': '321', 'specialty': "Комп'ютерні науки"},
+    {'id': 421, 'name': '421', 'specialty': "Комп'ютерні науки"},
+  ];
+
+  static const _semesters = [
+    'Семестр 1 (бакалаври) (2022-2023)',
+    'Семестр 2 (бакалаври) (2022-2023)',
+    'Семестр 3 (бакалаври) (2023-2024)',
+    'Семестр 4 (бакалаври) (2023-2024)',
+    'Семестр 5 (бакалаври) (2024-2025)',
+    'Семестр 6 (бакалаври) (2024-2025)',
+    'Семестр 7 (бакалаври) (2025-2026)',
+    'Семестр 8 (бакалаври) (2025-2026)',
+  ];
+
+  void _showCreateJournalDialog(BuildContext context) {
+    Map<String, dynamic>? selectedGroup;
+    final semSelected = List<bool>.filled(_semesters.length, false);
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(children: [
+                  const Expanded(
+                    child: Text('Створити новий журнал',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                            color: AppTheme.textDark)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ]),
+                const Divider(height: 20),
+
+                // Дисципліна (фіксована)
+                const Text('Дисципліна',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textMid)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppTheme.border),
+                    borderRadius: BorderRadius.circular(8),
+                    color: AppTheme.surface,
+                  ),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text(
+                        widget.discipline.fullName,
+                        style: const TextStyle(
+                            fontSize: 13, color: AppTheme.textDark),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(Icons.lock_outline,
+                        color: AppTheme.textLight, size: 16),
+                  ]),
+                ),
+                const SizedBox(height: 14),
+
+                // Група
+                const Text('Група *',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textMid)),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                        color: selectedGroup == null
+                            ? AppTheme.border
+                            : AppTheme.primary),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButton<Map<String, dynamic>>(
+                    value: selectedGroup,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    hint: const Text('Оберіть групу',
+                        style: TextStyle(
+                            fontSize: 13, color: AppTheme.textMid)),
+                    items: _groups
+                        .map((g) => DropdownMenuItem(
+                              value: g,
+                              child: Text(
+                                '${g['name']} (${g['specialty']})',
+                                style: const TextStyle(fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (val) =>
+                        setDialogState(() => selectedGroup = val),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // Семестри
+                const Text('Семестри',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textMid)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: const Color(0xFFFBBF24)
+                            .withOpacity(0.4)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('⚠️ ', style: TextStyle(fontSize: 13)),
+                      Expanded(
+                        child: Text(
+                          'Якщо дисципліна продовжується в іншому семестрі та закінчується заліком у іншому — обирайте відповідні семестри.',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(maxHeight: 200),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppTheme.border),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _semesters.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1),
+                      itemBuilder: (_, i) => CheckboxListTile(
+                        dense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(
+                                horizontal: 12),
+                        title: Text(_semesters[i],
+                            style:
+                                const TextStyle(fontSize: 13)),
+                        value: semSelected[i],
+                        onChanged: (val) => setDialogState(
+                            () => semSelected[i] = val ?? false),
+                        controlAffinity:
+                            ListTileControlAffinity.leading,
+                        activeColor: AppTheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+                Row(children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF374151),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('Скасувати'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: selectedGroup != null
+                          ? () {
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(SnackBar(
+                                content:
+                                    const Text('Журнал створено'),
+                                backgroundColor:
+                                    const Color(0xFF16A34A),
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(10)),
+                              ));
+                            }
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: AppTheme.border,
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('Створити журнал'),
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final journals = _disciplineJournals[widget.discipline.id] ?? [];
@@ -428,7 +678,7 @@ class _JournalListPageState extends State<_JournalListPage> {
                           size: 32, color: Colors.grey.shade400),
                       const SizedBox(height: 8),
                       ElevatedButton(
-                        onPressed: () {},
+                        onPressed: () => _showCreateJournalDialog(context),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
@@ -560,6 +810,41 @@ class _ResourceBadge extends StatelessWidget {
             style: TextStyle(
                 color: fg, fontSize: 11, fontWeight: FontWeight.w500)),
       ]),
+    );
+  }
+}
+
+class _AddDisciplineCard extends StatelessWidget {
+  const _AddDisciplineCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showAddDisciplineSheet(context),
+      child: Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.add, size: 36, color: Colors.grey.shade400),
+          const SizedBox(height: 10),
+          const Text('Додати дисципліну',
+              style: TextStyle(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15)),
+          const SizedBox(height: 4),
+          const Text('Створити нову навчальну дисципліну',
+              style: TextStyle(color: AppTheme.textMid, fontSize: 12)),
+        ],
+      ),
+    ),
     );
   }
 }

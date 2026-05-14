@@ -10,23 +10,21 @@ class GradesRepository {
   GradesRepository(this._client);
 
   // ── Журнал оцінок (курсанти + заняття + оцінки) ──────────────────────────
-
+  // GET /journals/groups/{groupId}/disciplines/{disciplineId}/semesters/{semesterId}
   Future<GradeJournalResponse> getJournal({
     required int groupId,
     required int disciplineId,
-    int? semesterId,
+    required int semesterId,
   }) async {
     final response = await _client.dio.get(
-      '/journals/groups/$groupId/disciplines/$disciplineId',
-      queryParameters: semesterId != null ? {'semesterId': semesterId} : null,
+      '/journals/groups/$groupId/disciplines/$disciplineId/semesters/$semesterId',
     );
     return GradeJournalResponse.fromJson(response.data as Map<String, dynamic>);
   }
 
-  // ── Заняття журналу ──────────────────────────────────────────────────────
-
+  // ── Заняття журналу (GET /lessons/journal/{journalId}) ────────────────────
   Future<List<LessonModel>> getLessons(int journalId) async {
-    final response = await _client.dio.get('/journals/$journalId/lessons');
+    final response = await _client.dio.get('/lessons/journal/$journalId');
     final list = response.data as List<dynamic>;
     return list
         .map((e) => LessonModel.fromJson(e as Map<String, dynamic>))
@@ -44,11 +42,12 @@ class GradesRepository {
     return LessonModel.fromJson(response.data as Map<String, dynamic>);
   }
 
+  // PATCH /lessons/{lessonId} (не PUT)
   Future<LessonModel> updateLesson({
     required int lessonId,
     required Map<String, dynamic> data,
   }) async {
-    final response = await _client.dio.put('/lessons/$lessonId', data: data);
+    final response = await _client.dio.patch('/lessons/$lessonId', data: data);
     return LessonModel.fromJson(response.data as Map<String, dynamic>);
   }
 

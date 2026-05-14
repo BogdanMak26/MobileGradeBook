@@ -61,7 +61,7 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
   Future<void> loadJournal({
     required int groupId,
     required int disciplineId,
-    int? semesterId,
+    required int semesterId,
   }) async {
     state = state.copyWith(isLoading: true, error: null);
 

@@ -1,5 +1,6 @@
 // lib/core/api/repositories.dart
-// Спільні репозиторії: користувачі, групи, семестри, журнали (CRUD), відвідуваність, курсанти, викладачі.
+// Спільні репозиторії: користувачі, групи, семестри, журнали (CRUD), відвідуваність, курсанти, викладачі,
+// факультети, кафедри, рейтинги.
 // Для операцій з оцінками і заняттями використовуйте GradesRepository.
 // Для читання дисциплін — DisciplinesRepository з features/disciplines/data.
 
@@ -23,9 +24,23 @@ class UserRepository {
     return Map<String, dynamic>.from(raw as Map);
   }
 
-  Future<List<dynamic>> getUsers() async {
-    final r = await _client.dio.get('/users');
-    return r.data as List<dynamic>;
+  /// Повертає сторінку користувачів. Параметри: page, size, role, search.
+  Future<Map<String, dynamic>> getUsers({
+    int page = 0,
+    int size = 20,
+    String? role,
+    String? search,
+  }) async {
+    final r = await _client.dio.get('/users', queryParameters: {
+      'page': page,
+      'size': size,
+      if (role != null && role.isNotEmpty) 'role': role,
+      if (search != null && search.isNotEmpty) 'search': search,
+    });
+    // Сервер повертає або Page<User> (з полем content) або List<User>
+    final raw = r.data;
+    if (raw is Map<String, dynamic>) return raw;
+    return {'content': raw, 'totalElements': (raw as List).length};
   }
 
   Future<Map<String, dynamic>> getUserById(int userId) async {
@@ -33,10 +48,21 @@ class UserRepository {
     return r.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> createUser(Map<String, dynamic> data) async {
+    final r = await _client.dio.post('/users', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> updateUser(
       int userId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/users/$userId', data: data);
     return r.data as Map<String, dynamic>;
+  }
+
+  /// mode: 'DEACTIVATE' | 'FULL'
+  Future<void> deleteUser(int userId, {String mode = 'DEACTIVATE'}) async {
+    await _client.dio.delete('/users/$userId',
+        queryParameters: {'mode': mode});
   }
 }
 
@@ -89,9 +115,12 @@ class SemestersRepository {
     return r.data as List<dynamic>;
   }
 
-  Future<Map<String, dynamic>> getCurrentSemester() async {
+  /// Повертає список поточних семестрів (сервер повертає List, не одиночний об'єкт).
+  Future<List<dynamic>> getCurrentSemester() async {
     final r = await _client.dio.get('/semesters/current');
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw is List) return raw;
+    return [raw];
   }
 
   Future<Map<String, dynamic>> getSemesterById(int semesterId) async {
@@ -102,6 +131,22 @@ class SemestersRepository {
   Future<List<dynamic>> getSemestersByGroup(int groupId) async {
     final r = await _client.dio.get('/semesters/groups/$groupId');
     return r.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createSemester(
+      Map<String, dynamic> data) async {
+    final r = await _client.dio.post('/semesters', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateSemester(
+      int semesterId, Map<String, dynamic> data) async {
+    final r = await _client.dio.patch('/semesters/$semesterId', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<void> deleteSemester(int semesterId) async {
+    await _client.dio.delete('/semesters/$semesterId');
   }
 }
 
@@ -213,6 +258,23 @@ class CadetsRepository {
     final r = await _client.dio.get('/cadets/$cadetId/analytics');
     return r.data as Map<String, dynamic>;
   }
+
+  Future<Map<String, dynamic>> createCadet(Map<String, dynamic> data) async {
+    final r = await _client.dio.post('/cadets', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateCadet(
+      int cadetId, Map<String, dynamic> data) async {
+    final r = await _client.dio.patch('/cadets/$cadetId', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  /// mode: 'DEACTIVATE' | 'FULL'
+  Future<void> deleteCadet(int cadetId, {String mode = 'DEACTIVATE'}) async {
+    await _client.dio.delete('/cadets/$cadetId',
+        queryParameters: {'mode': mode});
+  }
 }
 
 final cadetsRepositoryProvider = Provider<CadetsRepository>(
@@ -224,8 +286,10 @@ class TeachersRepository {
   final ApiClient _client;
   TeachersRepository(this._client);
 
-  Future<List<dynamic>> getTeachers() async {
-    final r = await _client.dio.get('/teachers');
+  Future<List<dynamic>> getTeachers({int? kafedraId}) async {
+    final r = await _client.dio.get('/teachers', queryParameters: {
+      if (kafedraId != null) 'kafedraId': kafedraId,
+    });
     return r.data as List<dynamic>;
   }
 
@@ -239,12 +303,146 @@ class TeachersRepository {
     return r.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> createTeacher(
+      Map<String, dynamic> data) async {
+    final r = await _client.dio.post('/teachers', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> updateTeacher(
       int teacherId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/teachers/$teacherId', data: data);
     return r.data as Map<String, dynamic>;
   }
+
+  /// mode: 'DEACTIVATE' | 'FULL'
+  Future<void> deleteTeacher(int teacherId,
+      {String mode = 'DEACTIVATE'}) async {
+    await _client.dio.delete('/teachers/$teacherId',
+        queryParameters: {'mode': mode});
+  }
 }
 
 final teachersRepositoryProvider = Provider<TeachersRepository>(
     (ref) => TeachersRepository(ref.read(apiClientProvider)));
+
+// ── Faculties Repository ──────────────────────────────────────────────────────
+
+class FacultiesRepository {
+  final ApiClient _client;
+  FacultiesRepository(this._client);
+
+  Future<List<dynamic>> getFaculties() async {
+    final r = await _client.dio.get('/faculties');
+    return r.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getFacultyById(int facultyId) async {
+    final r = await _client.dio.get('/faculties/$facultyId');
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> getFacultyGroups(int facultyId) async {
+    final r = await _client.dio.get('/faculties/$facultyId/groups');
+    return r.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createFaculty(
+      Map<String, dynamic> data) async {
+    final r = await _client.dio.post('/faculties', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateFaculty(
+      int facultyId, Map<String, dynamic> data) async {
+    final r = await _client.dio.patch('/faculties/$facultyId', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<void> deleteFaculty(int facultyId) async {
+    await _client.dio.delete('/faculties/$facultyId');
+  }
+}
+
+final facultiesRepositoryProvider = Provider<FacultiesRepository>(
+    (ref) => FacultiesRepository(ref.read(apiClientProvider)));
+
+// ── Kafedras Repository ───────────────────────────────────────────────────────
+
+class KafedrasRepository {
+  final ApiClient _client;
+  KafedrasRepository(this._client);
+
+  Future<List<dynamic>> getKafedras({int? facultyId}) async {
+    final r = await _client.dio.get('/kafedras', queryParameters: {
+      if (facultyId != null) 'facultyId': facultyId,
+    });
+    return r.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getKafedraById(int kafedraId) async {
+    final r = await _client.dio.get('/kafedras/$kafedraId');
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createKafedra(
+      Map<String, dynamic> data) async {
+    final r = await _client.dio.post('/kafedras', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateKafedra(
+      int kafedraId, Map<String, dynamic> data) async {
+    final r = await _client.dio.patch('/kafedras/$kafedraId', data: data);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<void> deleteKafedra(int kafedraId) async {
+    await _client.dio.delete('/kafedras/$kafedraId');
+  }
+}
+
+final kafedrasRepositoryProvider = Provider<KafedrasRepository>(
+    (ref) => KafedrasRepository(ref.read(apiClientProvider)));
+
+// ── Rates Repository ──────────────────────────────────────────────────────────
+
+class RatesRepository {
+  final ApiClient _client;
+  RatesRepository(this._client);
+
+  /// Повертає сторінку рейтингу. Параметри: page, size, groupId, semesterId.
+  Future<Map<String, dynamic>> getRates({
+    int page = 0,
+    int size = 20,
+    int? groupId,
+    int? semesterId,
+  }) async {
+    final r = await _client.dio.get('/rates', queryParameters: {
+      'page': page,
+      'size': size,
+      if (groupId != null) 'groupId': groupId,
+      if (semesterId != null) 'semesterId': semesterId,
+    });
+    final raw = r.data;
+    if (raw is Map<String, dynamic>) return raw;
+    return {'content': raw, 'totalElements': (raw as List).length};
+  }
+
+  /// Рейтинг для конкретного курсанта.
+  Future<List<dynamic>> getCadetRates(int cadetId) async {
+    final r = await _client.dio.get('/rates/cadets/$cadetId');
+    return r.data as List<dynamic>;
+  }
+
+  /// Запустити перерахунок рейтингу (повертає кількість оновлених записів).
+  Future<Map<String, dynamic>> recalculateRates() async {
+    final r = await _client.dio.post('/rates/recalculate');
+    final raw = r.data;
+    if (raw is Map<String, dynamic>) return raw;
+    return {'updated': raw};
+  }
+}
+
+final ratesRepositoryProvider = Provider<RatesRepository>(
+    (ref) => RatesRepository(ref.read(apiClientProvider)));

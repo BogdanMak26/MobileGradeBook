@@ -20,7 +20,6 @@
     </queries>
 
     <application
-        android:enableOnBackInvokedCallback="true"
         android:label="GradeBook ВІТІ"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

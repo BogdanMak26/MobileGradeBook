@@ -7,6 +7,7 @@
 .buildlog/
 .history
 .idea/
+images_claude
 
 
 # Flutter repo-specific
