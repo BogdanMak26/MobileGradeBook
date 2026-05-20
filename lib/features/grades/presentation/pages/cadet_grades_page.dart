@@ -1,21 +1,21 @@
 // lib/features/grades/presentation/pages/cadet_grades_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../../../core/mock/mock_data.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../viewmodels/cadet_grades_viewmodel.dart';
 
-class CadetGradesPage extends StatefulWidget {
+class CadetGradesPage extends ConsumerStatefulWidget {
   const CadetGradesPage({super.key});
 
   @override
-  State<CadetGradesPage> createState() => _CadetGradesPageState();
+  ConsumerState<CadetGradesPage> createState() => _CadetGradesPageState();
 }
 
-class _CadetGradesPageState extends State<CadetGradesPage>
+class _CadetGradesPageState extends ConsumerState<CadetGradesPage>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
-  final grades = MockDataProvider.cadetGrades;
 
   @override
   void initState() {
@@ -26,18 +26,32 @@ class _CadetGradesPageState extends State<CadetGradesPage>
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
-  double get avg {
-    final scored = grades.where((g) => g['score'] != null).toList();
-    if (scored.isEmpty) return 0;
-    return scored.map((g) => g['score'] as int).reduce((a, b) => a + b) /
-        scored.length;
-  }
-
-  int get presentCount =>
-      grades.where((g) => g['status'] == 'present').length;
-
   @override
   Widget build(BuildContext context) {
+    final vmState = ref.watch(cadetGradesViewModelProvider);
+    final grades = vmState.grades;
+
+    final scored = grades.where((g) => g['score'] != null).toList();
+    final avg = scored.isEmpty
+        ? 0.0
+        : scored.map((g) => (g['score'] as num).toDouble()).reduce((a, b) => a + b) /
+            scored.length;
+    final attendanceValues = grades
+        .map((g) => (g['attendancePercentage'] as num?)?.toDouble())
+        .where((v) => v != null)
+        .cast<double>()
+        .toList();
+    final avgAttendancePct = attendanceValues.isEmpty
+        ? 0
+        : (attendanceValues.reduce((a, b) => a + b) / attendanceValues.length).round();
+
+    if (vmState.isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Мої оцінки')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Мої оцінки'),
@@ -56,7 +70,7 @@ class _CadetGradesPageState extends State<CadetGradesPage>
         controller: _tab,
         children: [
           _GradesList(grades: grades),
-          _StatsView(grades: grades, avg: avg, presentCount: presentCount),
+          _StatsView(grades: grades, avg: avg, avgAttendancePct: avgAttendancePct),
         ],
       ),
     );
@@ -67,23 +81,33 @@ class _GradesList extends StatelessWidget {
   final List<Map<String, dynamic>> grades;
   const _GradesList({required this.grades});
 
+  Color _scoreColor(int? score) {
+    if (score == null) return Colors.grey;
+    if (score >= 90) return const Color(0xFF059669);
+    if (score >= 75) return AppTheme.secondary;
+    if (score >= 60) return AppTheme.primary;
+    return const Color(0xFFEF4444);
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (grades.isEmpty) {
+      return const Center(
+        child: Text('Немає даних про оцінки',
+            style: TextStyle(color: AppTheme.textMid)),
+      );
+    }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: grades.length,
       itemBuilder: (context, i) {
         final g = grades[i];
         final score = g['score'] as int?;
-        final status = g['status'] as String?;
+        final attendancePct = g['attendancePercentage'] as int? ?? 100;
+        final studentMarks = g['studentMarks'] as double?;
+        final maxMarks = g['maxMarks'] as double?;
         final date = g['date'] as DateTime;
-
-        Color scoreColor;
-        if (score == null) scoreColor = Colors.grey;
-        else if (score >= 90) scoreColor = const Color(0xFF059669);
-        else if (score >= 75) scoreColor = AppTheme.secondary;
-        else if (score >= 60) scoreColor = AppTheme.primary;
-        else scoreColor = const Color(0xFFEF4444);
+        final scoreColor = _scoreColor(score);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -102,10 +126,10 @@ class _GradesList extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Score circle
+              // Score circle (rate %)
               Container(
-                width: 46,
-                height: 46,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   color: scoreColor.withOpacity(0.1),
                   shape: BoxShape.circle,
@@ -113,12 +137,17 @@ class _GradesList extends StatelessWidget {
                       color: scoreColor.withOpacity(0.3), width: 1.5),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  score?.toString() ?? '—',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: scoreColor),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      score != null ? '$score%' : '—',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: score != null && score >= 100 ? 12 : 14,
+                          color: scoreColor),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 12),
@@ -133,19 +162,29 @@ class _GradesList extends StatelessWidget {
                             fontSize: 14,
                             color: AppTheme.textDark)),
                     const SizedBox(height: 2),
-                    Text(g['lesson'] as String,
+                    Text(g['shortName'] as String? ?? '',
                         style: const TextStyle(
                             fontSize: 12, color: AppTheme.textMid)),
                     const SizedBox(height: 4),
-                    Text(DateFormat('dd.MM.yyyy').format(date),
-                        style: const TextStyle(
-                            fontSize: 11, color: AppTheme.textLight)),
+                    Row(children: [
+                      if (studentMarks != null && maxMarks != null)
+                        Text(
+                          '${studentMarks.toStringAsFixed(1)} / ${maxMarks.toStringAsFixed(1)} б.',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.textLight),
+                        ),
+                      if (studentMarks != null && maxMarks != null)
+                        const SizedBox(width: 8),
+                      Text(DateFormat('yyyy').format(date),
+                          style: const TextStyle(
+                              fontSize: 11, color: AppTheme.textLight)),
+                    ]),
                   ],
                 ),
               ),
 
-              // Status badge
-              _StatusBadge(status: status),
+              // Attendance badge
+              _AttendanceBadge(pct: attendancePct),
             ],
           ),
         );
@@ -154,28 +193,28 @@ class _GradesList extends StatelessWidget {
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final String? status;
-  const _StatusBadge({this.status});
+class _AttendanceBadge extends StatelessWidget {
+  final int pct;
+  const _AttendanceBadge({required this.pct});
 
   @override
   Widget build(BuildContext context) {
-    Color bg;
-    Color fg;
-    String label;
-    switch (status) {
-      case 'present': bg = const Color(0xFFDCFCE7); fg = const Color(0xFF166534); label = 'Присутній'; break;
-      case 'absent': bg = const Color(0xFFFEE2E2); fg = const Color(0xFF991B1B); label = 'Відсутній'; break;
-      case 'late': bg = const Color(0xFFFFF7ED); fg = const Color(0xFF9A3412); label = 'Запізнився'; break;
-      default: bg = AppTheme.surface; fg = AppTheme.textMid; label = '—';
+    final Color bg;
+    final Color fg;
+    if (pct >= 90) {
+      bg = const Color(0xFFDCFCE7); fg = const Color(0xFF166534);
+    } else if (pct >= 75) {
+      bg = const Color(0xFFFFF7ED); fg = const Color(0xFF9A3412);
+    } else {
+      bg = const Color(0xFFFEE2E2); fg = const Color(0xFF991B1B);
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
           color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Text(label,
+      child: Text('$pct%',
           style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
+              fontSize: 12, fontWeight: FontWeight.w700, color: fg)),
     );
   }
 }
@@ -183,24 +222,27 @@ class _StatusBadge extends StatelessWidget {
 class _StatsView extends StatelessWidget {
   final List<Map<String, dynamic>> grades;
   final double avg;
-  final int presentCount;
+  final int avgAttendancePct;
   const _StatsView(
       {required this.grades,
       required this.avg,
-      required this.presentCount});
+      required this.avgAttendancePct});
 
   List<Widget> _buildDisciplineCards() {
-    final disciplines = <String>{
-      for (final g in grades) g['discipline'] as String
-    }.toList();
-
-    return disciplines.map((disc) {
-      final discGrades = grades.where((g) => g['discipline'] == disc).toList();
-      final scored = discGrades.where((g) => g['score'] != null).toList();
-      final discAvg = scored.isEmpty
-          ? 0.0
-          : scored.map((g) => g['score'] as int).reduce((a, b) => a + b) /
-              scored.length;
+    return grades.map((g) {
+      final score = g['score'] as int?;
+      final attendancePct = g['attendancePercentage'] as int? ?? 100;
+      final shortName = g['shortName'] as String? ?? '';
+      final discName = g['discipline'] as String;
+      final scoreColor = score == null
+          ? Colors.grey
+          : score >= 90
+              ? const Color(0xFF059669)
+              : score >= 75
+                  ? AppTheme.secondary
+                  : score >= 60
+                      ? AppTheme.primary
+                      : const Color(0xFFEF4444);
 
       return Container(
         margin: const EdgeInsets.only(bottom: 8),
@@ -213,16 +255,17 @@ class _StatsView extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: AppTheme.secondary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: Text(disc,
+              child: Text(shortName.isNotEmpty ? shortName : discName.substring(0, discName.length.clamp(0, 3)),
+                  textAlign: TextAlign.center,
                   style: const TextStyle(
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.secondary)),
             ),
@@ -231,22 +274,39 @@ class _StatsView extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(disc,
+                  Text(discName,
                       style: const TextStyle(
                           fontWeight: FontWeight.w600,
-                          color: AppTheme.textDark)),
-                  Text('${discGrades.length} занять',
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.textMid)),
+                          fontSize: 13,
+                          color: AppTheme.textDark),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    const Icon(Icons.check_circle_outline,
+                        size: 12, color: AppTheme.textLight),
+                    const SizedBox(width: 3),
+                    Text('Відвідуваність: $attendancePct%',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppTheme.textMid)),
+                  ]),
                 ],
               ),
             ),
-            Text(
-              discAvg > 0 ? discAvg.toStringAsFixed(1) : '—',
-              style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: _avgColor(discAvg)),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  score != null ? '$score%' : '—',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: scoreColor),
+                ),
+                const Text('рейтинг',
+                    style: TextStyle(fontSize: 10, color: AppTheme.textLight)),
+              ],
             ),
           ],
         ),
@@ -256,10 +316,6 @@ class _StatsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = grades.length;
-    final attendancePct =
-        total > 0 ? (presentCount / total * 100).round() : 0;
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -277,10 +333,10 @@ class _StatsView extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _StatItem(
-                    label: 'Середній бал',
-                    value: avg > 0 ? avg.toStringAsFixed(1) : '—'),
-                _StatItem(label: 'Відвідуваність', value: '$attendancePct%'),
-                _StatItem(label: 'Занять', value: '$total'),
+                    label: 'Середній рейтинг',
+                    value: avg > 0 ? '${avg.toStringAsFixed(1)}%' : '—'),
+                _StatItem(label: 'Відвідуваність', value: '$avgAttendancePct%'),
+                _StatItem(label: 'Дисциплін', value: '${grades.length}'),
               ],
             ),
           ),
@@ -297,13 +353,6 @@ class _StatsView extends StatelessWidget {
     );
   }
 
-  Color _avgColor(double avg) {
-    if (avg == 0) return Colors.grey;
-    if (avg >= 90) return const Color(0xFF059669);
-    if (avg >= 75) return AppTheme.secondary;
-    if (avg >= 60) return AppTheme.primary;
-    return const Color(0xFFEF4444);
-  }
 }
 
 class _StatItem extends StatelessWidget {

@@ -49,7 +49,7 @@ class BiometricService {
         localizedReason: reason,
         options: const AuthenticationOptions(
           stickyAuth: true,
-          biometricOnly: true,
+          biometricOnly: false, // allow device PIN/password fallback
         ),
       );
       return success ? BiometricResult.success : BiometricResult.failed;

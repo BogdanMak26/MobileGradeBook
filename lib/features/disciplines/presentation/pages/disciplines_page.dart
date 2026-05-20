@@ -2,39 +2,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/mock/mock_data.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../../grades/presentation/pages/grade_journal_page.dart';
+import '../../data/models/discipline_model.dart';
+import '../../data/models/journal_model.dart';
+import '../viewmodels/disciplines_viewmodel.dart';
 import 'discipline_management_page.dart';
 import '../../../../shared/widgets/add_discipline_sheet.dart';
-
-// ── Mock journals per discipline ───────────────────────────────────────────────
-// journalId, groupId, groupName, disciplineName, semester, startDate, endDate, year
-const _disciplineJournals = <int, List<Map<String, dynamic>>>{
-  1: [ // РПЗ
-    {'journalId': 1, 'groupId': 221, 'groupName': '221', 'disc': 'Розробка програмного забезпечення для мобільних пристроїв', 'semester': 8, 'start': '03.01.2026', 'end': '26.06.2026', 'year': '2025-2026', 'hasDrive': true, 'hasMeet': true, 'hasMoodle': true},
-    {'journalId': 2, 'groupId': 222, 'groupName': '222', 'disc': 'Розробка програмного забезпечення для мобільних пристроїв', 'semester': 8, 'start': '03.01.2026', 'end': '26.06.2026', 'year': '2025-2026', 'hasDrive': true, 'hasMeet': false, 'hasMoodle': true},
-  ],
-  2: [ // ПІС
-    {'journalId': 3, 'groupId': 221, 'groupName': '221', 'disc': 'Проєктування інформаційних систем', 'semester': 6, 'start': '03.01.2026', 'end': '26.06.2026', 'year': '2025-2026', 'hasDrive': false, 'hasMeet': true, 'hasMoodle': true},
-    {'journalId': 4, 'groupId': 231, 'groupName': '231', 'disc': 'Проєктування інформаційних систем', 'semester': 6, 'start': '03.01.2026', 'end': '26.06.2026', 'year': '2025-2026', 'hasDrive': true, 'hasMeet': false, 'hasMoodle': false},
-    {'journalId': 5, 'groupId': 232, 'groupName': '232', 'disc': 'Проєктування інформаційних систем', 'semester': 6, 'start': '03.01.2026', 'end': '26.06.2026', 'year': '2025-2026', 'hasDrive': false, 'hasMeet': false, 'hasMoodle': true},
-  ],
-  3: [ // ДМ
-    {'journalId': 6, 'groupId': 241, 'groupName': '241', 'disc': 'Дискретна математика', 'semester': 4, 'start': '29.01.2026', 'end': '29.08.2026', 'year': '2025-2026', 'hasDrive': true, 'hasMeet': true, 'hasMoodle': true},
-    {'journalId': 7, 'groupId': 242, 'groupName': '242', 'disc': 'Дискретна математика', 'semester': 4, 'start': '29.01.2026', 'end': '29.08.2026', 'year': '2025-2026', 'hasDrive': true, 'hasMeet': true, 'hasMoodle': true},
-    {'journalId': 8, 'groupId': 243, 'groupName': '243', 'disc': 'Дискретна математика', 'semester': 4, 'start': '29.01.2026', 'end': '29.08.2026', 'year': '2025-2026', 'hasDrive': false, 'hasMeet': false, 'hasMoodle': false},
-  ],
-  4: [ // ТСА
-    {'journalId': 9, 'groupId': 221, 'groupName': '221', 'disc': 'Технології системного адміністрування', 'semester': 4, 'start': '29.01.2026', 'end': '29.08.2026', 'year': '2025-2026', 'hasDrive': false, 'hasMeet': true, 'hasMoodle': true},
-    {'journalId': 10, 'groupId': 222, 'groupName': '222', 'disc': 'Технології системного адміністрування', 'semester': 4, 'start': '29.01.2026', 'end': '29.08.2026', 'year': '2025-2026', 'hasDrive': true, 'hasMeet': false, 'hasMoodle': true},
-  ],
-  5: [ // МАР
-    {'journalId': 11, 'groupId': 251, 'groupName': '251', 'disc': 'Методики автоматизованого розгортання IT-інфраструктури', 'semester': 2, 'start': '01.09.2025', 'end': '31.01.2026', 'year': '2025-2026', 'hasDrive': false, 'hasMeet': false, 'hasMoodle': false},
-  ],
-};
 
 class DisciplinesPage extends ConsumerStatefulWidget {
   const DisciplinesPage({super.key});
@@ -53,11 +29,16 @@ class _DisciplinesPageState extends ConsumerState<DisciplinesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final role = ref.watch(authViewModelProvider.select((s) => s.role ?? ''));
-    final disciplines = MockDataProvider.disciplines
+    final authState = ref.watch(authViewModelProvider);
+    final role = authState.role ?? '';
+    final cadetGroupId = authState.groupId;
+    final vm = ref.watch(disciplinesViewModelProvider);
+
+    final disciplines = vm.disciplines
         .where((d) =>
             d.fullName.toLowerCase().contains(_search.toLowerCase()) ||
-            (d.shortName?.toLowerCase().contains(_search.toLowerCase()) ?? false))
+            (d.shortName?.toLowerCase().contains(_search.toLowerCase()) ??
+                false))
         .toList();
 
     return Scaffold(
@@ -126,24 +107,31 @@ class _DisciplinesPageState extends ConsumerState<DisciplinesPage> {
               ],
             ]),
           ),
-          Expanded(
-            child: disciplines.isEmpty
-                ? _EmptyState(search: _search)
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    itemCount: disciplines.length + (_canManage(role) ? 1 : 0),
-                    itemBuilder: (context, i) {
-                      if (_canManage(role) && i == disciplines.length) {
-                        return const _AddDisciplineCard();
-                      }
-                      return _DisciplineCard(
-                        discipline: disciplines[i],
-                        isCadet: _isCadet(role),
-                        cadetGroupId: 221,
-                      );
-                    },
-                  ),
-          ),
+          if (vm.isLoading)
+            const Expanded(
+                child: Center(child: CircularProgressIndicator()))
+          else if (vm.error != null)
+            Expanded(child: Center(child: Text(vm.error!)))
+          else
+            Expanded(
+              child: disciplines.isEmpty
+                  ? _EmptyState(search: _search)
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                      itemCount:
+                          disciplines.length + (_canManage(role) ? 1 : 0),
+                      itemBuilder: (context, i) {
+                        if (_canManage(role) && i == disciplines.length) {
+                          return const _AddDisciplineCard();
+                        }
+                        return _DisciplineCard(
+                          discipline: disciplines[i],
+                          isCadet: _isCadet(role),
+                          cadetGroupId: cadetGroupId,
+                        );
+                      },
+                    ),
+            ),
         ],
       ),
     );
@@ -152,10 +140,10 @@ class _DisciplinesPageState extends ConsumerState<DisciplinesPage> {
 
 // ── Картка дисципліни ─────────────────────────────────────────────────────────
 
-class _DisciplineCard extends StatelessWidget {
-  final MockDiscipline discipline;
+class _DisciplineCard extends ConsumerStatefulWidget {
+  final DisciplineModel discipline;
   final bool isCadet;
-  final int cadetGroupId;
+  final int? cadetGroupId;
 
   const _DisciplineCard({
     required this.discipline,
@@ -164,8 +152,13 @@ class _DisciplineCard extends StatelessWidget {
   });
 
   @override
+  ConsumerState<_DisciplineCard> createState() => _DisciplineCardState();
+}
+
+class _DisciplineCardState extends ConsumerState<_DisciplineCard> {
+  @override
   Widget build(BuildContext context) {
-    final journals = _disciplineJournals[discipline.id] ?? [];
+    final discipline = widget.discipline;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -238,7 +231,7 @@ class _DisciplineCard extends StatelessWidget {
                   children: [
                     _FooterRow(
                       label: 'Журналів:',
-                      value: '${journals.length}',
+                      value: '${discipline.journalCount}',
                     ),
                     const SizedBox(height: 4),
                     if (discipline.teacherName != null)
@@ -252,24 +245,21 @@ class _DisciplineCard extends StatelessWidget {
               ),
               OutlinedButton(
                 onPressed: () {
-                  if (isCadet) {
-                    // Курсант — одразу журнал своєї групи
-                    final journal = journals.firstWhere(
-                      (j) => j['groupId'] == cadetGroupId,
-                      orElse: () => journals.isNotEmpty ? journals[0] : {},
-                    );
-                    if (journal.isNotEmpty) {
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => GradeJournalPage(
-                          disciplineId: discipline.id.toString(),
-                          groupName: '\${journal[\'groupName\']} навчальна група',
-                          semesterId: journal['semester'].toString(),
-                          readOnly: true,
-                        ),
-                      ));
-                    }
+                  if (widget.isCadet) {
+                    final groupId = discipline.groupId;
+                    final semesterId = discipline.semesterId;
+                    if (groupId == null || semesterId == null) return;
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => GradeJournalPage(
+                        groupId: groupId,
+                        disciplineId: discipline.id.toString(),
+                        semesterId: semesterId.toString(),
+                        disciplineShortName: discipline.shortName,
+                        groupName: 'Навчальна група',
+                        readOnly: true,
+                      ),
+                    ));
                   } else {
-                    // Викладач/адмін — список журналів по групах
                     Navigator.push(context, MaterialPageRoute(
                       builder: (_) => _JournalListPage(discipline: discipline),
                     ));
@@ -330,17 +320,26 @@ class _FooterRow extends StatelessWidget {
 
 // ── Список журналів дисципліни ─────────────────────────────────────────────────
 
-class _JournalListPage extends StatefulWidget {
-  final MockDiscipline discipline;
+class _JournalListPage extends ConsumerStatefulWidget {
+  final DisciplineModel discipline;
   const _JournalListPage({required this.discipline});
 
   @override
-  State<_JournalListPage> createState() => _JournalListPageState();
+  ConsumerState<_JournalListPage> createState() => _JournalListPageState();
 }
 
-class _JournalListPageState extends State<_JournalListPage> {
+class _JournalListPageState extends ConsumerState<_JournalListPage> {
   String _search = '';
   bool _currentOnly = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(disciplinesViewModelProvider.notifier)
+          .getJournalsFor(widget.discipline.id);
+    });
+  }
 
   static const _groups = <Map<String, dynamic>>[
     {'id': 221, 'name': '221', 'specialty': "Комп'ютерні науки"},
@@ -588,10 +587,12 @@ class _JournalListPageState extends State<_JournalListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final journals = _disciplineJournals[widget.discipline.id] ?? [];
-    final filtered = journals
-        .where((j) => j['groupName'].toString().toLowerCase()
-            .contains(_search.toLowerCase()))
+    final vmState = ref.watch(disciplinesViewModelProvider);
+    final allJournals =
+        vmState.journals[widget.discipline.id] ?? <JournalModel>[];
+    final filtered = allJournals
+        .where((j) =>
+            j.groupName.toLowerCase().contains(_search.toLowerCase()))
         .toList();
 
     return Scaffold(
@@ -605,7 +606,6 @@ class _JournalListPageState extends State<_JournalListPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Back
           TextButton.icon(
             onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.chevron_left, size: 18),
@@ -623,7 +623,6 @@ class _JournalListPageState extends State<_JournalListPage> {
                   fontWeight: FontWeight.bold, color: AppTheme.textDark),
             ),
           ),
-          // Search
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: TextField(
@@ -632,12 +631,11 @@ class _JournalListPageState extends State<_JournalListPage> {
                 hintText: 'Пошук за групою...',
                 prefixIcon: Icon(Icons.search,
                     color: AppTheme.textMid, size: 18),
-                contentPadding: EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 10),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
             ),
           ),
-          // Checkbox
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 16, 4),
             child: Row(children: [
@@ -649,22 +647,20 @@ class _JournalListPageState extends State<_JournalListPage> {
               ),
               Expanded(
                 child: Text(
-                  'Показувати поточні семестри (${filtered.map((j) => j['semester']).toSet().join(', ')})'
-                  '  (${filtered.length} з ${journals.length} журналів)',
+                  'Показувати поточні семестри'
+                  '  (${filtered.length} з ${allJournals.length} журналів)',
                   style: const TextStyle(
                       fontSize: 12, color: AppTheme.textDark),
                 ),
               ),
             ]),
           ),
-          // List
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               itemCount: filtered.length + 1,
               itemBuilder: (context, i) {
                 if (i == filtered.length) {
-                  // Кнопка "Створити журнал"
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.all(20),
@@ -678,7 +674,8 @@ class _JournalListPageState extends State<_JournalListPage> {
                           size: 32, color: Colors.grey.shade400),
                       const SizedBox(height: 8),
                       ElevatedButton(
-                        onPressed: () => _showCreateJournalDialog(context),
+                        onPressed: () =>
+                            _showCreateJournalDialog(context),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
@@ -711,7 +708,7 @@ class _JournalListPageState extends State<_JournalListPage> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '${j['groupName']} навчальна група',
+                            '${j.groupName} навчальна група',
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
@@ -722,28 +719,38 @@ class _JournalListPageState extends State<_JournalListPage> {
                             color: Colors.grey.shade400, size: 20),
                       ]),
                       const SizedBox(height: 6),
-                      Text('(${j['disc']})',
+                      Text('(${j.disciplineName})',
                           style: const TextStyle(
                               fontSize: 12, color: AppTheme.textMid)),
                       const SizedBox(height: 4),
                       Text(
-                        'Семестр: ${j['semester']} (${j['start']} - ${j['end']} | ${j['year']})',
+                        'Семестр: ${j.semester}'
+                        '${j.startDate != null ? ' (${j.startDate} - ${j.endDate}' : ''}'
+                        '${j.academicYear != null ? ' | ${j.academicYear})' : (j.startDate != null ? ')' : '')}',
                         style: const TextStyle(
                             fontSize: 12, color: AppTheme.textMid),
                       ),
-                      // Drive/Meet/Moodle badges
-                      if (j['hasDrive'] == true || j['hasMeet'] == true || j['hasMoodle'] == true) ...[
+                      if (j.hasDrive || j.hasMeet || j.hasMoodle) ...[
                         const SizedBox(height: 8),
                         Wrap(spacing: 6, children: [
-                          if (j['hasDrive'] == true)
-                            _ResourceBadge(icon: Icons.folder, label: 'Drive',
-                                bg: const Color(0xFFE8F5E9), fg: const Color(0xFF2E7D32)),
-                          if (j['hasMeet'] == true)
-                            _ResourceBadge(icon: Icons.videocam, label: 'Meet',
-                                bg: const Color(0xFFE3F2FD), fg: const Color(0xFF1565C0)),
-                          if (j['hasMoodle'] == true)
-                            _ResourceBadge(icon: Icons.school, label: 'Moodle',
-                                bg: const Color(0xFFFFF3E0), fg: const Color(0xFFE65100)),
+                          if (j.hasDrive)
+                            _ResourceBadge(
+                                icon: Icons.folder,
+                                label: 'Drive',
+                                bg: const Color(0xFFE8F5E9),
+                                fg: const Color(0xFF2E7D32)),
+                          if (j.hasMeet)
+                            _ResourceBadge(
+                                icon: Icons.videocam,
+                                label: 'Meet',
+                                bg: const Color(0xFFE3F2FD),
+                                fg: const Color(0xFF1565C0)),
+                          if (j.hasMoodle)
+                            _ResourceBadge(
+                                icon: Icons.school,
+                                label: 'Moodle',
+                                bg: const Color(0xFFFFF3E0),
+                                fg: const Color(0xFFE65100)),
                         ]),
                       ],
                       const SizedBox(height: 12),
@@ -754,10 +761,17 @@ class _JournalListPageState extends State<_JournalListPage> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => GradeJournalPage(
-                                disciplineId: widget.discipline.id.toString(),
-                                groupName: '${j['groupName']} навчальна група',
-                                semesterId: j['semester'].toString(),
-
+                                groupId: j.groupId != 0 ? j.groupId : null,
+                                disciplineId: j.disciplineId != 0
+                                    ? j.disciplineId.toString()
+                                    : widget.discipline.id.toString(),
+                                semesterId: j.semesterId != 0
+                                    ? j.semesterId.toString()
+                                    : null,
+                                disciplineShortName:
+                                    widget.discipline.shortName,
+                                groupName:
+                                    '${j.groupName} навчальна група',
                               ),
                             ),
                           ),
@@ -767,7 +781,8 @@ class _JournalListPageState extends State<_JournalListPage> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 20, vertical: 8),
                             textStyle: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 14),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8)),
                           ),

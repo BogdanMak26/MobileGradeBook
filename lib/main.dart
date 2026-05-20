@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -6,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/local/local_cache.dart';
 import 'core/local/offline_queue.dart';
+import 'core/notifications/fcm_service.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/sync/sync_service.dart';
 import 'core/utils/app_router.dart';
@@ -14,6 +16,7 @@ import 'shared/widgets/connectivity_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   await initializeDateFormatting('uk', null);
   final prefs = await SharedPreferences.getInstance();
   await NotificationService().initialize();
@@ -32,8 +35,8 @@ class GradeBookApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // eagerly init sync so it starts listening to network changes
     ref.read(syncServiceProvider);
+    ref.read(fcmServiceProvider).initialize();
 
     final router = ref.watch(appRouterProvider);
     return MaterialApp.router(

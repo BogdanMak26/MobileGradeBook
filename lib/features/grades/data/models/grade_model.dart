@@ -1,6 +1,7 @@
 // lib/features/grades/data/models/grade_model.dart
 
 import 'lesson_model.dart';
+import '../../../../core/utils/military_labels.dart';
 
 class GradeModel {
   final int id;
@@ -43,19 +44,72 @@ class GradeJournalResponse {
   });
 
   factory GradeJournalResponse.fromJson(Map<String, dynamic> json) {
-    final journalId = json['id'] as int? ?? 0;
+    final journalId = json['journalId'] as int? ?? json['id'] as int? ?? 0;
+    final lessonsRaw = json['lessons'] as List<dynamic>? ?? [];
+
+    final lessons = lessonsRaw
+        .map((l) => LessonModel.fromJson({
+              ...(l as Map<String, dynamic>),
+              'journalId': journalId,
+            }))
+        .toList();
+
+    // Server returns cadets (names only) and grades inside lessons.subLessons.marks
+    // attendance inside lessons.attends — build per-cadet maps from there
+    final cadetsRaw = json['cadets'] as List<dynamic>? ?? [];
+    final cadets = cadetsRaw.map((c) {
+      final cMap = c as Map<String, dynamic>;
+      final cadetId = cMap['cadetId'] as int? ?? cMap['id'] as int? ?? 0;
+      final surname = cMap['cadetSurname'] as String? ?? '';
+      final firstName = cMap['cadetName'] as String? ?? cMap['fullName'] as String? ?? '';
+      final fullName = (surname.isNotEmpty && firstName.isNotEmpty)
+          ? '$surname $firstName'
+          : (surname + firstName).trim();
+
+      final grades = <int, double?>{};
+      final statuses = <int, String?>{};
+
+      for (final l in lessonsRaw) {
+        final lMap = l as Map<String, dynamic>;
+        final lessonId = (lMap['lessonId'] ?? lMap['id']) as int;
+
+        // Sum marks for this cadet across all subLessons of this lesson
+        double? totalScore;
+        for (final sl in (lMap['subLessons'] as List<dynamic>? ?? [])) {
+          final slMap = sl as Map<String, dynamic>;
+          for (final m in (slMap['marks'] as List<dynamic>? ?? [])) {
+            final mMap = m as Map<String, dynamic>;
+            if ((mMap['cadetId'] as int?) == cadetId) {
+              final v = (mMap['value'] as num?)?.toDouble();
+              if (v != null) totalScore = (totalScore ?? 0.0) + v;
+            }
+          }
+        }
+        if (totalScore != null) grades[lessonId] = totalScore;
+
+        // Find attendance record for this cadet
+        for (final a in (lMap['attends'] as List<dynamic>? ?? [])) {
+          final aMap = a as Map<String, dynamic>;
+          if ((aMap['cadetId'] as int?) == cadetId) {
+            final code = MilitaryLabels.attendCode(aMap['attended'] as String?);
+            if (code != null) statuses[lessonId] = code;
+            break;
+          }
+        }
+      }
+
+      return JournalCadet(
+        id: cadetId,
+        fullName: fullName,
+        gradesByLessonId: grades,
+        statusByLessonId: statuses,
+      );
+    }).toList();
+
     return GradeJournalResponse(
       journalId: journalId,
-      cadets: (json['cadets'] as List<dynamic>? ?? [])
-          .map((e) => JournalCadet.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      // Inject journalId into each lesson so LessonModel has correct reference
-      lessons: (json['lessons'] as List<dynamic>? ?? [])
-          .map((e) => LessonModel.fromJson({
-                ...(e as Map<String, dynamic>),
-                'journalId': journalId,
-              }))
-          .toList(),
+      cadets: cadets,
+      lessons: lessons,
     );
   }
 }

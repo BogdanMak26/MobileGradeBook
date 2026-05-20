@@ -13,7 +13,11 @@ class ApiClient {
       baseUrl: AppConstants.baseUrl,
       connectTimeout: const Duration(seconds: AppConstants.connectionTimeoutSeconds),
       receiveTimeout: const Duration(seconds: AppConstants.connectionTimeoutSeconds),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'CF-Access-Client-Id': '3041217c4cb0104098b18aaa97a5b476.access',
+        'CF-Access-Client-Secret': 'fcd30b8531a9a0c1099e04ed8a3d0b3bc00be9fed51066d49e414d5afc749aa9',
+      },
     ));
 
     dio.interceptors.add(_AuthInterceptor(authService, dio));
@@ -42,7 +46,18 @@ class _AuthInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     print('[API] RESPONSE ${response.statusCode} ${response.requestOptions.uri}');
-    print('[API] RESPONSE body: ${response.data}');
+    final body = response.data;
+    if (body is String && body.contains('Cloudflare Access')) {
+      print('[API] CF ACCESS BLOCK — отримано HTML замість JSON');
+      handler.reject(DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        type: DioExceptionType.badResponse,
+        error: 'CloudflareAccessBlocked',
+      ));
+      return;
+    }
+    print('[API] RESPONSE body: $body');
     handler.next(response);
   }
 

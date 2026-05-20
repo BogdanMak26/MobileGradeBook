@@ -1,83 +1,64 @@
 // lib/features/groups/presentation/pages/my_group_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/api/repositories.dart';
+import '../../../../core/utils/military_labels.dart';
 import '../../../../shared/theme/app_theme.dart';
-
-// ── Дані всіх навчальних груп ─────────────────────────────────────────────────
-
-const _allGroups = <Map<String, dynamic>>[
-  {'id': 156, 'name': '121', 'specialty': 'Електроніка, електронні комунікації, приладобудування та радіотехніка', 'year': 2022, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '1'},
-  {'id': 107, 'name': '122', 'specialty': 'Електроніка, електронні комунікації, приладобудування та радіотехніка', 'year': 2022, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '1'},
-  {'id': 104, 'name': '131', 'specialty': 'Електроніка, електронні комунікації, приладобудування та радіотехніка', 'year': 2023, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '1'},
-  {'id': 105, 'name': '132', 'specialty': 'Електроніка, електронні комунікації, приладобудування та радіотехніка', 'year': 2023, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '1'},
-  {'id': 103, 'name': '141', 'specialty': 'Електроніка, електронні комунікації, приладобудування та радіотехніка', 'year': 2024, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '1'},
-  {'id': 102, 'name': '142', 'specialty': 'Електроніка, електронні комунікації, приладобудування та радіотехніка', 'year': 2024, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '1'},
-  {'id': 112, 'name': '221', 'specialty': "Комп'ютерні науки", 'year': 2022, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '2'},
-  {'id': 113, 'name': '222', 'specialty': "Комп'ютерні науки", 'year': 2022, 'degree': 'Бакалавр', 'type': 'Очна ф.н.', 'faculty': '2'},
-];
-
-const _cadetsA = <Map<String, dynamic>>[
-  {'name': 'Авраменко Сергій',    'position': 'Командир відділення', 'email': 'serhiy.avramenko@viti.edu.ua',   'phone': '+380671100101'},
-  {'name': 'Бандура Тарас',       'position': 'Заступник командира', 'email': 'taras.bandura@viti.edu.ua',       'phone': '+380671100102'},
-  {'name': 'Гончаренко Павло',    'position': 'Солдат',              'email': 'pavlo.honcharenko@viti.edu.ua',   'phone': '+380671100103'},
-  {'name': 'Дорошенко Юрій',      'position': 'Солдат',              'email': 'yurii.doroshenko@viti.edu.ua',    'phone': '+380671100104'},
-  {'name': 'Єрошенко Богдан',     'position': 'Солдат',              'email': 'bohdan.yeroshenko@viti.edu.ua',   'phone': '+380671100105'},
-  {'name': 'Жук Олексій',         'position': 'Солдат',              'email': 'oleksiy.zhuk@viti.edu.ua',       'phone': '+380671100106'},
-  {'name': 'Зінченко Артем',      'position': 'Солдат',              'email': 'artem.zinchenko@viti.edu.ua',    'phone': '+380671100107'},
-  {'name': 'Іванець Микита',      'position': 'Солдат',              'email': 'mykyta.ivanets@viti.edu.ua',     'phone': '+380671100108'},
-  {'name': 'Карпенко Владислав',  'position': 'Солдат',              'email': 'vladyslav.karpenko@viti.edu.ua', 'phone': '+380671100109'},
-  {'name': 'Литвиненко Роман',    'position': 'Солдат',              'email': 'roman.lytvynenko@viti.edu.ua',   'phone': '+380671100110'},
-  {'name': 'Мельниченко Дмитро',  'position': 'Солдат',              'email': 'dmytro.melnychenko@viti.edu.ua', 'phone': '+380671100111'},
-  {'name': 'Нікітенко Максим',    'position': 'Солдат',              'email': 'maksym.nikitenko@viti.edu.ua',   'phone': '+380671100112'},
-];
-
-const _cadetsB = <Map<String, dynamic>>[
-  {'name': 'Олійниченко Андрій',  'position': 'Командир відділення', 'email': 'andriy.oliinychenko@viti.edu.ua', 'phone': '+380672200201'},
-  {'name': 'Петренко Василь',     'position': 'Заступник командира', 'email': 'vasyl.petrenko@viti.edu.ua',      'phone': '+380672200202'},
-  {'name': 'Романченко Ігор',     'position': 'Солдат',              'email': 'ihor.romanchenko@viti.edu.ua',    'phone': '+380672200203'},
-  {'name': 'Свиридченко Антон',   'position': 'Солдат',              'email': 'anton.svyrydchenko@viti.edu.ua',  'phone': '+380672200204'},
-  {'name': 'Терещенко Євген',     'position': 'Солдат',              'email': 'yevhen.tereshchenko@viti.edu.ua', 'phone': '+380672200205'},
-  {'name': 'Ткаченко Вадим',      'position': 'Солдат',              'email': 'vadym.tkachenko@viti.edu.ua',     'phone': '+380672200206'},
-  {'name': 'Удовиченко Олег',     'position': 'Солдат',              'email': 'oleh.udovychenko@viti.edu.ua',    'phone': '+380672200207'},
-  {'name': 'Федоренко Руслан',    'position': 'Солдат',              'email': 'ruslan.fedorenko@viti.edu.ua',    'phone': '+380672200208'},
-  {'name': 'Харченко Станіслав',  'position': 'Солдат',              'email': 'stanislav.kharchenko@viti.edu.ua','phone': '+380672200209'},
-  {'name': 'Цибуленко Кирило',    'position': 'Солдат',              'email': 'kyrylo.tsybulenko@viti.edu.ua',   'phone': '+380672200210'},
-  {'name': 'Чорновол Іван',       'position': 'Солдат',              'email': 'ivan.chornovil@viti.edu.ua',      'phone': '+380672200211'},
-  {'name': 'Шульженко Денис',     'position': 'Солдат',              'email': 'denys.shulzhenko@viti.edu.ua',    'phone': '+380672200212'},
-];
-
-const _cadetsByGroupName = <String, List<Map<String, dynamic>>>{
-  '121': _cadetsA,
-  '122': _cadetsB,
-  '131': _cadetsA,
-  '132': _cadetsB,
-  '141': _cadetsA,
-  '142': _cadetsB,
-  '222': _cadetsB,
-};
+import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 
 // ── Сторінка всіх навчальних груп ────────────────────────────────────────────
 
-class AllGroupsPage extends StatefulWidget {
+class AllGroupsPage extends ConsumerStatefulWidget {
   const AllGroupsPage({super.key});
 
   @override
-  State<AllGroupsPage> createState() => _AllGroupsPageState();
+  ConsumerState<AllGroupsPage> createState() => _AllGroupsPageState();
 }
 
-class _AllGroupsPageState extends State<AllGroupsPage> {
+class _AllGroupsPageState extends ConsumerState<AllGroupsPage> {
+  List<Map<String, dynamic>> _groups = [];
+  bool _isLoading = true;
+  String? _error;
   String _search = '';
 
-  List<Map<String, dynamic>> get _filtered => _allGroups
-      .where((g) =>
-          g['name'].toString().contains(_search) ||
-          (g['specialty'] as String).toLowerCase().contains(_search.toLowerCase()))
-      .toList();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final raw = await ref.read(groupsRepositoryProvider).getGroups();
+      setState(() {
+        _groups = raw.map((e) => e as Map<String, dynamic>).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_search.isEmpty) return _groups;
+    final q = _search.toLowerCase();
+    return _groups.where((g) {
+      final name = g['name']?.toString().toLowerCase() ?? '';
+      final specialty = _groupSpecialty(g).toLowerCase();
+      return name.contains(q) || specialty.contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filtered;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Електронний журнал'),
@@ -101,52 +82,74 @@ class _AllGroupsPageState extends State<AllGroupsPage> {
               onChanged: (v) => setState(() => _search = v),
               decoration: InputDecoration(
                 hintText: 'Пошук груп...',
-                prefixIcon: const Icon(Icons.search, color: AppTheme.textMid, size: 18),
+                prefixIcon:
+                    const Icon(Icons.search, color: AppTheme.textMid, size: 18),
                 suffixIcon: _search.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 18),
                         onPressed: () => setState(() => _search = ''),
                       )
                     : null,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
             ),
           ),
-          Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.people_outline,
-                            size: 56, color: Colors.grey.shade300),
-                        const SizedBox(height: 12),
-                        Text('Груп не знайдено',
-                            style: TextStyle(color: Colors.grey.shade500)),
-                      ],
-                    ),
-                  )
-                : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.85,
-                    ),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, i) {
-                      final g = filtered[i];
-                      return _GroupCard(group: g);
-                    },
-                  ),
-          ),
+          Expanded(child: _buildBody()),
         ],
       ),
     );
   }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+            const SizedBox(height: 12),
+            Text('Помилка: $_error',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textMid)),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+          ],
+        ),
+      );
+    }
+    final filtered = _filtered;
+    if (filtered.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people_outline, size: 56, color: Colors.grey.shade300),
+            const SizedBox(height: 12),
+            Text('Груп не знайдено',
+                style: TextStyle(color: Colors.grey.shade500)),
+          ],
+        ),
+      );
+    }
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.85,
+      ),
+      itemCount: filtered.length,
+      itemBuilder: (context, i) => _GroupCard(group: filtered[i]),
+    );
+  }
 }
+
+// ── Картка групи ──────────────────────────────────────────────────────────────
 
 class _GroupCard extends StatelessWidget {
   final Map<String, dynamic> group;
@@ -154,15 +157,14 @@ class _GroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final groupId = group['id'] as int?;
     return GestureDetector(
       onTap: () {
-        final name = group['name'] as String;
-        final cadets = _cadetsByGroupName[name] ??
-            (name == '221' ? _MyGroupPageState._cadets : _cadetsA);
+        if (groupId == null) return;
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => GroupDetailPage(group: group, cadets: cadets),
+            builder: (_) => GroupDetailPage(groupId: groupId, group: group),
           ),
         );
       },
@@ -186,14 +188,17 @@ class _GroupCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(group['name'] as String,
-                    style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.primary)),
+                Text(
+                  group['name']?.toString() ?? '—',
+                  style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.primary),
+                ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
                     color: AppTheme.surface,
                     borderRadius: BorderRadius.circular(6),
@@ -206,23 +211,467 @@ class _GroupCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: Text(group['specialty'] as String,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textMid),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis),
+              child: Text(
+                _groupSpecialty(group),
+                style: const TextStyle(fontSize: 11, color: AppTheme.textMid),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const SizedBox(height: 8),
-            _GroupInfoRow(label: 'Рік вступу', value: '${group['year']}'),
+            _GroupInfoRow(label: 'Рік вступу', value: _groupYear(group)),
             const SizedBox(height: 2),
-            _GroupInfoRow(label: 'Ступінь', value: group['degree'] as String),
+            _GroupInfoRow(label: 'Ступінь', value: _groupDegree(group)),
             const SizedBox(height: 2),
-            _GroupInfoRow(label: 'Факультет', value: group['faculty'] as String),
+            _GroupInfoRow(label: 'Факультет', value: _groupFaculty(group)),
           ],
         ),
       ),
     );
   }
 }
+
+// ── Деталі групи (для не-курсантів) ──────────────────────────────────────────
+
+class GroupDetailPage extends ConsumerStatefulWidget {
+  final int groupId;
+  final Map<String, dynamic> group;
+  const GroupDetailPage(
+      {super.key, required this.groupId, required this.group});
+
+  @override
+  ConsumerState<GroupDetailPage> createState() => _GroupDetailPageState();
+}
+
+class _GroupDetailPageState extends ConsumerState<GroupDetailPage> {
+  List<Map<String, dynamic>> _cadets = [];
+  bool _isLoading = true;
+  String? _error;
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final raw = await ref
+          .read(cadetsRepositoryProvider)
+          .getCadets(groupId: widget.groupId);
+      setState(() {
+        _cadets = raw.map((e) => e as Map<String, dynamic>).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_search.isEmpty) return _cadets;
+    final q = _search.toLowerCase();
+    return _cadets.where((c) {
+      final name =
+          '${c['name'] ?? ''} ${c['surname'] ?? ''}'.toLowerCase();
+      return name.contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final g = widget.group;
+    final filtered = _filtered;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Електронний журнал'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(height: 3, color: AppTheme.primary),
+        ),
+      ),
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              child: Text(
+                'Деталі ${g['name'] ?? ''} групи',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold, color: AppTheme.textDark),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(child: _GroupInfoCard(group: g)),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.people_outline,
+                        color: AppTheme.primary, size: 24),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Курсанти (${_cadets.length})',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textDark),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                  TextField(
+                    onChanged: (v) => setState(() => _search = v),
+                    decoration: const InputDecoration(
+                      hintText: 'Пошук курсантів...',
+                      prefixIcon: Icon(Icons.search,
+                          color: AppTheme.textMid, size: 18),
+                      contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ),
+          if (_isLoading)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            )
+          else if (_error != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Помилка: $_error',
+                    style: const TextStyle(color: Colors.redAccent)),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) => _CadetCard(cadet: filtered[i]),
+                  childCount: filtered.length,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Сторінка власної групи (курсант) ─────────────────────────────────────────
+
+class MyGroupPage extends ConsumerStatefulWidget {
+  const MyGroupPage({super.key});
+
+  @override
+  ConsumerState<MyGroupPage> createState() => _MyGroupPageState();
+}
+
+class _MyGroupPageState extends ConsumerState<MyGroupPage> {
+  Map<String, dynamic>? _groupInfo;
+  List<Map<String, dynamic>> _cadets = [];
+  bool _isLoading = true;
+  String? _error;
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final auth = ref.read(authViewModelProvider);
+    final groupId = auth.groupId;
+    if (groupId == null) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final group = await ref.read(groupsRepositoryProvider).getGroupById(groupId);
+      final cadetsList = (group['cadets'] as List<dynamic>?) ?? [];
+      final enriched = Map<String, dynamic>.from(group);
+      if (!enriched.containsKey('facultyName') || enriched['facultyName'] == null) {
+        enriched['facultyName'] = auth.facultyName;
+      }
+      final sortedCadets = cadetsList
+          .map((c) => c as Map<String, dynamic>)
+          .toList()
+        ..sort((a, b) {
+          final aName = '${a['surname'] ?? ''} ${a['name'] ?? ''}'.toLowerCase();
+          final bName = '${b['surname'] ?? ''} ${b['name'] ?? ''}'.toLowerCase();
+          return aName.compareTo(bName);
+        });
+      setState(() {
+        _groupInfo = enriched;
+        _cadets = sortedCadets;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_search.isEmpty) return _cadets;
+    final q = _search.toLowerCase();
+    return _cadets.where((c) {
+      final name =
+          '${c['name'] ?? ''} ${c['surname'] ?? ''}'.toLowerCase();
+      return name.contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final g = _groupInfo;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Електронний журнал'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(height: 3, color: AppTheme.primary),
+        ),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          size: 48, color: Colors.redAccent),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Помилка: $_error',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppTheme.textMid),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                          onPressed: _load, child: const Text('Повторити')),
+                    ],
+                  ),
+                )
+              : CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                        child: Text(
+                          'Деталі ${g?['name'] ?? ''} групи',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textDark),
+                        ),
+                      ),
+                    ),
+                    if (g != null)
+                      SliverToBoxAdapter(child: _GroupInfoCard(group: g)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              const Icon(Icons.people_outline,
+                                  color: AppTheme.primary, size: 24),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Курсанти (${_cadets.length})',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.textDark),
+                              ),
+                            ]),
+                            const SizedBox(height: 12),
+                            TextField(
+                              onChanged: (v) =>
+                                  setState(() => _search = v),
+                              decoration: const InputDecoration(
+                                hintText: 'Пошук курсантів...',
+                                prefixIcon: Icon(Icons.search,
+                                    color: AppTheme.textMid, size: 18),
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) => _CadetCard(cadet: _filtered[i]),
+                          childCount: _filtered.length,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+    );
+  }
+}
+
+// ── Картка інформації про групу ───────────────────────────────────────────────
+
+class _GroupInfoCard extends StatelessWidget {
+  final Map<String, dynamic> group;
+  const _GroupInfoCard({required this.group});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.school, color: AppTheme.primary, size: 26),
+            const SizedBox(width: 12),
+            Text('Інформація про групу',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+          ]),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _InfoBadge(
+                  label: 'Група',
+                  value: group['name']?.toString() ?? '—'),
+              _InfoBadge(
+                  label: 'Факультет', value: _groupFaculty(group)),
+              _InfoBadge(
+                  label: 'Спеціальність',
+                  value: _groupSpecialty(group)),
+              _InfoBadge(label: 'Рік вступу', value: _groupYear(group)),
+              _InfoBadge(label: 'Ступінь', value: _groupDegree(group)),
+              _InfoBadge(label: 'Тип', value: _groupType(group)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Допоміжні функції для полів групи ────────────────────────────────────────
+
+String _groupFaculty(Map<String, dynamic> g) {
+  final f = g['faculty'];
+  if (f is Map<String, dynamic>) {
+    return f['name']?.toString() ?? f['shortName']?.toString() ?? '—';
+  }
+  return f?.toString() ?? g['facultyName']?.toString() ?? '—';
+}
+
+String _groupSpecialty(Map<String, dynamic> g) {
+  final raw = g['specialty']?.toString() ??
+      g['speciality']?.toString() ??
+      g['specialization']?.toString() ??
+      g['specialtyName']?.toString() ?? '';
+  const map = <String, String>{
+    'COMPUTER_SCIENCES': "Комп'ютерні науки",
+    'INFORMATION_SYSTEMS': 'Інформаційні системи',
+    'ELECTRONICS': 'Електроніка',
+    'TELECOMMUNICATIONS': 'Телекомунікації',
+    'SOFTWARE_ENGINEERING': 'Програмна інженерія',
+    'CYBERSECURITY': 'Кібербезпека',
+    'APPLIED_MATHEMATICS': 'Прикладна математика',
+  };
+  if (raw.isEmpty) return '—';
+  return map[raw] ?? raw;
+}
+
+String _groupYear(Map<String, dynamic> g) =>
+    g['yearStart']?.toString() ??
+    g['enrollmentYear']?.toString() ??
+    g['year']?.toString() ??
+    '—';
+
+String _groupDegree(Map<String, dynamic> g) {
+  final raw = g['degree']?.toString() ?? g['educationDegree']?.toString() ?? '';
+  const map = <String, String>{
+    'BACHELOR': 'Бакалавр',
+    'MASTER': 'Магістр',
+    'PHD': 'Доктор філософії',
+    'JUNIOR_BACHELOR': 'Молодший бакалавр',
+  };
+  if (raw.isEmpty) return '—';
+  return map[raw] ?? raw;
+}
+
+String _groupType(Map<String, dynamic> g) {
+  final raw = g['formOfStudy']?.toString() ??
+      g['type']?.toString() ??
+      g['formOfEducation']?.toString() ?? '';
+  const map = <String, String>{
+    'FULL_TIME': 'Денна',
+    'PART_TIME': 'Заочна',
+    'EVENING': 'Вечірня',
+    'DISTANCE': 'Дистанційна',
+  };
+  if (raw.isEmpty) return '—';
+  return map[raw] ?? raw;
+}
+
+// ── Рядок інформації ──────────────────────────────────────────────────────────
 
 class _GroupInfoRow extends StatelessWidget {
   final String label;
@@ -240,327 +689,6 @@ class _GroupInfoRow extends StatelessWidget {
               fontWeight: FontWeight.w600,
               color: AppTheme.textDark)),
     ]);
-  }
-}
-
-// ── Деталі конкретної групи (для не-курсантів) ────────────────────────────────
-
-class GroupDetailPage extends StatefulWidget {
-  final Map<String, dynamic> group;
-  final List<Map<String, dynamic>> cadets;
-  const GroupDetailPage({super.key, required this.group, required this.cadets});
-
-  @override
-  State<GroupDetailPage> createState() => _GroupDetailPageState();
-}
-
-class _GroupDetailPageState extends State<GroupDetailPage> {
-  String _search = '';
-
-  List<Map<String, dynamic>> get _filtered => widget.cadets
-      .where((c) => c['name']
-          .toString()
-          .toLowerCase()
-          .contains(_search.toLowerCase()))
-      .toList();
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _filtered;
-    final g = widget.group;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Електронний журнал'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(height: 3, color: AppTheme.primary),
-        ),
-      ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-              child: Text('Деталі ${g['name']} групи',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold, color: AppTheme.textDark)),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    const Icon(Icons.school, color: AppTheme.primary, size: 26),
-                    const SizedBox(width: 12),
-                    Text('Інформація про групу',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textDark)),
-                  ]),
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _InfoBadge(label: 'Група',        value: g['name'] as String),
-                      _InfoBadge(label: 'Факультет',    value: g['faculty'] as String),
-                      _InfoBadge(label: 'Спеціальність',value: g['specialty'] as String),
-                      _InfoBadge(label: 'Рік вступу',   value: '${g['year']}'),
-                      _InfoBadge(label: 'Ступінь',      value: g['degree'] as String),
-                      _InfoBadge(label: 'Тип',          value: g['type'] as String),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 16)),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    const Icon(Icons.people_outline, color: AppTheme.primary, size: 24),
-                    const SizedBox(width: 10),
-                    Text('Курсанти (${widget.cadets.length})',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold, color: AppTheme.textDark)),
-                  ]),
-                  const SizedBox(height: 12),
-                  TextField(
-                    onChanged: (v) => setState(() => _search = v),
-                    decoration: InputDecoration(
-                      hintText: 'Пошук курсантів...',
-                      prefixIcon: const Icon(Icons.search,
-                          color: AppTheme.textMid, size: 18),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => _CadetCard(cadet: filtered[i]),
-                childCount: filtered.length,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class MyGroupPage extends StatefulWidget {
-  const MyGroupPage({super.key});
-
-  @override
-  State<MyGroupPage> createState() => _MyGroupPageState();
-}
-
-class _MyGroupPageState extends State<MyGroupPage> {
-  String _search = '';
-
-  // Мокові дані групи
-  static const _groupInfo = {
-    'name': '221',
-    'faculty': '2',
-    'specialty': "Комп'ютерні науки",
-    'yearStart': '2022',
-    'degree': 'Бакалавр',
-    'type': 'Очна ф.н.',
-  };
-
-  // Мокові курсанти з контактами
-  static final List<Map<String, dynamic>> _cadets = [
-    {'name': 'Атабаєв Олексій',    'position': 'Солдат',              'email': 'oleksiy.atabayev@viti.edu.ua',    'phone': '+380683394811'},
-    {'name': 'Ващик Олександр',    'position': 'Солдат',              'email': 'oleksandr.vashchyk@viti.edu.ua',  'phone': '+380680947558'},
-    {'name': 'Войтенко Андрій',    'position': 'Солдат',              'email': 'andriy.voytenko@viti.edu.ua',     'phone': '+380635727653'},
-    {'name': 'Гупало Ярослав',     'position': 'Солдат',              'email': 'yaroslav.gupalo@viti.edu.ua',     'phone': '+380671234567'},
-    {'name': 'Кравченко Іван',     'position': 'Солдат',              'email': 'ivan.kravchenko@viti.edu.ua',     'phone': '+380682345678'},
-    {'name': 'Макаренко Богдан',   'position': 'Командир відділення', 'email': 'bogdan.makarenko@viti.edu.ua',    'phone': '+380993456789'},
-    {'name': 'Мельник Андрій',     'position': 'Солдат',              'email': 'andriy.melnyk@viti.edu.ua',       'phone': '+380674567890'},
-    {'name': 'Науменко Олексій',   'position': 'Заступник командира', 'email': 'oleksiy.naumenko@viti.edu.ua',    'phone': '+380685678901'},
-    {'name': 'Романенко Василь',   'position': 'Солдат',              'email': 'vasyl.romanenko@viti.edu.ua',     'phone': '+380636789012'},
-    {'name': 'Лисенко Микола',     'position': 'Солдат',              'email': 'mykola.lysenko@viti.edu.ua',      'phone': '+380997890123'},
-    {'name': 'Бондаренко Дмитро',  'position': 'Солдат',              'email': 'dmytro.bondarenko@viti.edu.ua',   'phone': '+380688901234'},
-    {'name': 'Гриценко Сергій',    'position': 'Солдат',              'email': 'serhiy.hrytsenko@viti.edu.ua',    'phone': '+380679012345'},
-    {'name': 'Чернікова Катерина', 'position': 'Солдат',              'email': 'kateryna.chernikova@viti.edu.ua', 'phone': '+380630123456'},
-    {'name': 'Дубовик Владислав',  'position': 'Солдат',              'email': 'vladyslav.dubovyk@viti.edu.ua',   'phone': '+380991234567'},
-    {'name': 'Шевченко Тарас',     'position': 'Солдат',              'email': 'taras.shevchenko@viti.edu.ua',    'phone': '+380682345679'},
-  ];
-
-  List<Map<String, dynamic>> get _filtered => _cadets
-      .where((c) => c['name']
-          .toString()
-          .toLowerCase()
-          .contains(_search.toLowerCase()))
-      .toList();
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _filtered;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Електронний журнал'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(height: 3, color: AppTheme.primary),
-        ),
-      ),
-      body: CustomScrollView(
-        slivers: [
-          // ── Заголовок ────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-              child: Text(
-                'Деталі ${_groupInfo['name']} групи',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textDark),
-              ),
-            ),
-          ),
-
-          // ── Інформація про групу ─────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Заголовок картки
-                  Row(
-                    children: [
-                      const Icon(Icons.school,
-                          color: AppTheme.primary, size: 26),
-                      const SizedBox(width: 12),
-                      Text('Інформація про групу',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.textDark)),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Бейджі
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _InfoBadge(label: 'Група', value: _groupInfo['name']!),
-                      _InfoBadge(label: 'Факультет', value: _groupInfo['faculty']!),
-                      _InfoBadge(label: 'Спеціальність', value: _groupInfo['specialty']!),
-                      _InfoBadge(label: 'Рік вступу', value: _groupInfo['yearStart']!),
-                      _InfoBadge(label: 'Ступінь', value: _groupInfo['degree']!),
-                      _InfoBadge(label: 'Тип', value: _groupInfo['type']!),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-          // ── Курсанти ─────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Заголовок секції
-                  Row(
-                    children: [
-                      const Icon(Icons.people_outline,
-                          color: AppTheme.primary, size: 24),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Курсанти (${_cadets.length})',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textDark),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Пошук
-                  TextField(
-                    onChanged: (v) => setState(() => _search = v),
-                    decoration: InputDecoration(
-                      hintText: 'Пошук курсантів...',
-                      prefixIcon: const Icon(Icons.search,
-                          color: AppTheme.textMid, size: 18),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Список курсантів ─────────────────────────────────────────────
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => _CadetCard(cadet: filtered[i]),
-                childCount: filtered.length,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -610,15 +738,31 @@ class _CadetCard extends StatelessWidget {
   final Map<String, dynamic> cadet;
   const _CadetCard({required this.cadet});
 
+  String get _displayName {
+    final name = cadet['name']?.toString() ?? '';
+    final surname = cadet['surname']?.toString() ?? '';
+    if (surname.isNotEmpty) return '$surname $name'.trim();
+    return name;
+  }
+
+  String get _displayPosition =>
+      MilitaryLabels.position(cadet['position']?.toString());
+
   Color get _positionColor {
-    final pos = cadet['position'] as String;
-    if (pos == 'Командир відділення') return const Color(0xFF1D4ED8);
-    if (pos == 'Заступник командира') return const Color(0xFF7C3AED);
+    final pos = cadet['position']?.toString() ?? '';
+    if (pos == 'SQUAD_COMMANDER') return const Color(0xFF1D4ED8);
+    if (pos == 'DEPUTY_COMMANDER' || pos == 'PLATOON_COMMANDER') {
+      return const Color(0xFF7C3AED);
+    }
     return AppTheme.primary;
   }
 
   @override
   Widget build(BuildContext context) {
+    final email = cadet['email']?.toString() ?? '—';
+    final phone =
+        (cadet['phone'] ?? cadet['phoneNumber'])?.toString() ?? '—';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
@@ -637,44 +781,35 @@ class _CadetCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ім'я
-          Text(cadet['name'] as String,
+          Text(_displayName,
               style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
                   color: AppTheme.textDark)),
           const SizedBox(height: 6),
-
-          // Посада (бейдж)
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
               color: _positionColor,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(cadet['position'] as String,
+            child: Text(_displayPosition,
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w500)),
           ),
           const SizedBox(height: 12),
-
-          // Email
           _ContactRow(
-            label: 'EMAIL:',
-            value: cadet['email'] as String,
-            icon: Icons.email_outlined,
-          ),
+              label: 'EMAIL:',
+              value: email,
+              icon: Icons.email_outlined),
           const SizedBox(height: 6),
-
-          // Телефон
           _ContactRow(
-            label: 'ТЕЛЕФОН:',
-            value: cadet['phone'] as String,
-            icon: Icons.phone_outlined,
-          ),
+              label: 'ТЕЛЕФОН:',
+              value: phone,
+              icon: Icons.phone_outlined),
         ],
       ),
     );
@@ -701,8 +836,8 @@ class _ContactRow extends StatelessWidget {
                 letterSpacing: 0.5)),
         const SizedBox(height: 2),
         Text(value,
-            style: const TextStyle(
-                fontSize: 13, color: AppTheme.textDark)),
+            style:
+                const TextStyle(fontSize: 13, color: AppTheme.textDark)),
       ],
     );
   }

@@ -1,12 +1,13 @@
 // lib/features/disciplines/data/models/journal_model.dart
 
 class JournalModel {
-  final int id;
+  final int id;           // journalId from API
+  final int semesterId;   // semester DB ID (e.g. 68) — used for API calls
   final int groupId;
   final String groupName;
-  final int disciplineId;
+  final int disciplineId; // 0 if not returned by API
   final String disciplineName;
-  final int semester;
+  final int semester;     // semester number (e.g. 8)
   final String? startDate;
   final String? endDate;
   final String? academicYear;
@@ -16,6 +17,7 @@ class JournalModel {
 
   const JournalModel({
     required this.id,
+    required this.semesterId,
     required this.groupId,
     required this.groupName,
     required this.disciplineId,
@@ -36,15 +38,25 @@ class JournalModel {
   factory JournalModel.fromJson(Map<String, dynamic> json) {
     final group = json['group'] as Map<String, dynamic>?;
     final discipline = json['discipline'] as Map<String, dynamic>?;
+
+    // API returns nested semesters array: [{semesterId, semesterNumber, startDate, endDate}]
+    final semestersList = json['semesters'] as List<dynamic>?;
+    final firstSem = semestersList?.isNotEmpty == true
+        ? semestersList!.first as Map<String, dynamic>?
+        : null;
+
     return JournalModel(
-      id: json['id'] as int,
+      id: json['journalId'] as int? ?? json['id'] as int? ?? 0,
+      semesterId: firstSem?['semesterId'] as int? ?? json['semesterId'] as int? ?? 0,
       groupId: json['groupId'] as int? ?? group?['id'] as int? ?? 0,
       groupName: json['groupName'] as String? ?? group?['name'] as String? ?? '',
       disciplineId: json['disciplineId'] as int? ?? discipline?['id'] as int? ?? 0,
-      disciplineName: json['disciplineName'] as String? ?? discipline?['name'] as String? ?? '',
-      semester: json['semester'] as int? ?? 0,
-      startDate: json['startDate'] as String?,
-      endDate: json['endDate'] as String?,
+      disciplineName: json['disciplineFullName'] as String? ??
+          json['disciplineName'] as String? ??
+          discipline?['name'] as String? ?? '',
+      semester: firstSem?['semesterNumber'] as int? ?? json['semester'] as int? ?? 0,
+      startDate: firstSem?['startDate'] as String? ?? json['startDate'] as String?,
+      endDate: firstSem?['endDate'] as String? ?? json['endDate'] as String?,
       academicYear: json['academicYear'] as String?,
       driveLink: json['driveLink'] as String?,
       meetLink: json['meetLink'] as String?,

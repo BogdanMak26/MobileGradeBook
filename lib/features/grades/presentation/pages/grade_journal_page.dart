@@ -2,45 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/mock/mock_data.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
-
-// ── Mock data ─────────────────────────────────────────────────────────────────
-
-const _mockLessons = [
-  {'code': 'Л 1/1',  'type': 'ЛЕКЦІЯ',           'date': '07.01.2026', 'topic': 'Мобільні пристрої та платформи',          'maxScore': null},
-  {'code': 'ГЗ 1/2', 'type': 'ГРУПОВЕ ЗАНЯТТЯ',   'date': '09.01.2026', 'topic': 'Введення у розробку ПЗ під ОС Android',   'maxScore': 2.0},
-  {'code': 'ГЗ 1/3', 'type': 'ГРУПОВЕ ЗАНЯТТЯ',   'date': '10.01.2026', 'topic': 'Особливості проєкту в Android Studio',    'maxScore': 2.0},
-  {'code': 'ПЗ 1/4', 'type': 'ПРАКТИЧНЕ ЗАНЯТТЯ', 'date': '13.01.2026', 'topic': 'Розробка мобільного додатку Калькулятор', 'maxScore': 6.0},
-  {'code': 'ГЗ 1/5', 'type': 'ГРУПОВЕ ЗАНЯТТЯ',   'date': '14.01.2026', 'topic': 'Основи Flutter',                          'maxScore': 2.0},
-];
-
-final _maxTotalScore = _mockLessons.fold<double>(
-    0.0, (s, l) => s + ((l['maxScore'] as double?) ?? 0.0));
-
-final _mockScores = <String, List<double?>> {
-  'Атабаєв Олексій':   [null, 1.75, 2.0,  null, 1.5],
-  'Ващик Олександр':   [null, 1.5,  1.25, 5.5,  1.75],
-  'Войтенко Андрій':   [null, 2.0,  1.5,  1.0,  1.5],
-  'Гупало Ярослав':    [null, 0.75, 1.5,  4.0,  1.75],
-  'Гур\'янов Михайло': [null, 1.25, 1.75, 2.0,  1.5],
-  'Дмитренко Марія':   [null, 2.0,  2.0,  3.0,  1.25],
-  'Дрига Микола':      [null, 1.75, 1.5,  4.0,  1.75],
-  'Дубовик Владислав': [null, 1.75, 1.75, 6.0,  2.0],
-};
-
-final _mockAttendance = <String, List<String?>> {
-  'Атабаєв Олексій':   ['П',  'П',  null,  null, 'П'],
-  'Ващик Олександр':   [null, 'П',  null,  null, null],
-  'Войтенко Андрій':   ['П',  null, 'Х',   null, 'П'],
-  'Гупало Ярослав':    ['П',  'П',  null,  null, null],
-  'Гур\'янов Михайло': [null, null, null,  'П',  'П'],
-  'Дмитренко Марія':   ['П',  'П',  'П',   'П',  null],
-  'Дрига Микола':      ['П',  null, null,  'Хв', 'П'],
-  'Дубовик Владислав': ['П',  'П',  'ІЗ',  null, 'П'],
-};
+import '../viewmodels/grade_journal_viewmodel.dart';
 
 // Attendance options matching the reference app
 const _attOptions = [
@@ -58,14 +23,18 @@ const _attOptions = [
 
 class GradeJournalPage extends ConsumerStatefulWidget {
   final String disciplineId;
+  final String? disciplineShortName;
   final String? groupName;
   final String? semesterId;
+  final int? groupId;
   final bool readOnly;
   const GradeJournalPage({
     super.key,
-    required this.disciplineId,
+    this.disciplineId = '',
+    this.disciplineShortName,
     this.groupName,
     this.semesterId,
+    this.groupId,
     this.readOnly = false,
   });
 
@@ -76,19 +45,57 @@ class GradeJournalPage extends ConsumerStatefulWidget {
 class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
-  late MockDiscipline? _discipline;
-  Map<String, List<double?>> _scores =
-      _mockScores.map((k, v) => MapEntry(k, List<double?>.from(v)));
-  Map<String, List<String?>> _attendance =
-      _mockAttendance.map((k, v) => MapEntry(k, List<String?>.from(v)));
+  List<Map<String, dynamic>> _lessons = const [];
+  Map<String, List<double?>> _scores = const {};
+  Map<String, List<String?>> _attendance = const {};
+  bool _dataFromApi = false;
+
+  double get _maxTotalScore =>
+      _lessons.fold(0.0, (s, l) => s + ((l['maxScore'] as double?) ?? 0.0));
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
-    final id = int.tryParse(widget.disciplineId) ?? 0;
-    _discipline = MockDataProvider.disciplineById(id);
-    // _scores and _attendance already initialized at declaration
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.groupId != null) {
+        final discId = int.tryParse(widget.disciplineId) ?? 0;
+        final semId = int.tryParse(widget.semesterId ?? '') ?? 0;
+        ref.read(gradeJournalViewModelProvider.notifier).loadJournal(
+          groupId: widget.groupId!,
+          disciplineId: discId,
+          semesterId: semId,
+        );
+      }
+    });
+  }
+
+  void _loadFromJournal(JournalState s) {
+    final journal = s.journal;
+    if (journal == null || _dataFromApi) return;
+    setState(() {
+      _dataFromApi = true;
+      _lessons = journal.lessons.map((l) => <String, dynamic>{
+        'code': l.code,
+        'type': l.type,
+        'date': l.date,
+        'topic': l.topic,
+        'maxScore': l.maxScore > 0 ? l.maxScore : null,
+        'id': l.id,
+      }).toList();
+      _scores = {
+        for (final c in journal.cadets)
+          c.fullName: journal.lessons
+              .map((l) => c.gradesByLessonId[l.id])
+              .toList()
+      };
+      _attendance = {
+        for (final c in journal.cadets)
+          c.fullName: journal.lessons
+              .map((l) => c.statusByLessonId[l.id])
+              .toList()
+      };
+    });
   }
 
   @override
@@ -96,21 +103,28 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
 
   @override
   Widget build(BuildContext context) {
-    final disc   = _discipline;
-    final role   = ref.watch(authViewModelProvider).role;
+    ref.listen<JournalState>(gradeJournalViewModelProvider, (_, next) {
+      if (!next.isLoading && next.journal != null && !_dataFromApi) _loadFromJournal(next);
+    });
+
+    final journalVm = ref.watch(gradeJournalViewModelProvider);
+    final role = ref.watch(authViewModelProvider).role;
     final canEdit = !widget.readOnly &&
         (role == UserRole.instructor ||
          role == UserRole.departmentHead ||
          role == UserRole.superAdmin);
+    final prefix = widget.disciplineShortName ?? widget.disciplineId;
+    final title = widget.groupName != null
+        ? '$prefix — ${widget.groupName}'
+        : 'Журнал';
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              disc != null
-                  ? '${disc.shortName} — ${widget.groupName ?? 'Журнал'}'
-                  : 'Журнал',
+              title,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
@@ -164,42 +178,66 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
           const SizedBox(width: 4),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Container(
-            color: Colors.white,
-            child: TabBar(
-              controller: _tab,
-              indicatorColor: AppTheme.primary,
-              labelColor: AppTheme.primary,
-              unselectedLabelColor: AppTheme.textMid,
-              labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
-              unselectedLabelStyle: const TextStyle(fontSize: 10),
-              tabs: [
-                _TabItem(icon: Icons.bar_chart, label: 'Журнал'),
-                _TabItem(icon: Icons.menu_book_outlined, label: 'Заняття'),
-                _TabItem(icon: Icons.link, label: 'Посилання'),
-              ],
-            ),
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tab,
-              children: [
-                _GradesTab(
-                  scores:     _scores,
-                  attendance: _attendance,
-                  canEdit:    canEdit,
-                  onScoreChanged: (name, idx, v) =>
-                      setState(() => _scores[name]![idx] = v),
-                  onAttendanceChanged: (name, idx, code) =>
-                      setState(() => _attendance[name]![idx] = code),
+          Column(
+            children: [
+              Container(
+                color: Colors.white,
+                child: TabBar(
+                  controller: _tab,
+                  indicatorColor: AppTheme.primary,
+                  labelColor: AppTheme.primary,
+                  unselectedLabelColor: AppTheme.textMid,
+                  labelStyle: const TextStyle(
+                      fontSize: 10, fontWeight: FontWeight.w600),
+                  unselectedLabelStyle: const TextStyle(fontSize: 10),
+                  tabs: [
+                    _TabItem(icon: Icons.bar_chart, label: 'Журнал'),
+                    _TabItem(
+                        icon: Icons.menu_book_outlined, label: 'Заняття'),
+                    _TabItem(icon: Icons.link, label: 'Посилання'),
+                  ],
                 ),
-                _LessonsTab(onAdd: () => _showAddLessonDialog(context)),
-                _LinksTab(),
-              ],
-            ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tab,
+                  children: [
+                    journalVm.isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : journalVm.error != null && !_dataFromApi
+                            ? Center(child: Text(journalVm.error!, style: const TextStyle(color: Colors.red)))
+                            : !_dataFromApi && _lessons.isEmpty
+                                ? const Center(child: Text('Немає даних', style: TextStyle(color: AppTheme.textMid)))
+                                : _GradesTab(
+                                    lessons: _lessons,
+                                    maxTotalScore: _maxTotalScore,
+                                    scores: _scores,
+                                    attendance: _attendance,
+                                    canEdit: canEdit,
+                                    onScoreChanged: (name, idx, v) =>
+                                        setState(() => _scores[name]![idx] = v),
+                                    onAttendanceChanged: (name, idx, code) =>
+                                        setState(() => _attendance[name]![idx] = code),
+                                  ),
+                    _LessonsTab(
+                      lessons: _lessons,
+                      onAdd: () => _showAddLessonDialog(context),
+                    ),
+                    _LinksTab(),
+                  ],
+                ),
+              ),
+            ],
           ),
+          if (journalVm.isLoading)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0x55FFFFFF),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
         ],
       ),
     );
@@ -396,6 +434,8 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
 // ── Grades tab ────────────────────────────────────────────────────────────────
 
 class _GradesTab extends StatefulWidget {
+  final List<Map<String, dynamic>> lessons;
+  final double maxTotalScore;
   final Map<String, List<double?>> scores;
   final Map<String, List<String?>> attendance;
   final bool canEdit;
@@ -403,6 +443,8 @@ class _GradesTab extends StatefulWidget {
   final void Function(String name, int idx, String? code) onAttendanceChanged;
 
   const _GradesTab({
+    required this.lessons,
+    required this.maxTotalScore,
     required this.scores,
     required this.attendance,
     required this.canEdit,
@@ -415,7 +457,10 @@ class _GradesTab extends StatefulWidget {
 }
 
 class _GradesTabState extends State<_GradesTab> {
-  final _scrollCtrl = ScrollController();
+  final _hCtrl     = ScrollController(); // horizontal
+  final _vertLeft  = ScrollController(); // left list vertical
+  final _vertRight = ScrollController(); // right list vertical
+  bool _syncing = false;
 
   // Layout constants
   static const double _attW   = 36.0;  // attendance sub-column
@@ -430,10 +475,32 @@ class _GradesTabState extends State<_GradesTab> {
       (l['maxScore'] as double?) != null ? _attW + _scoreW : _attW;
 
   double get _totalScrollW =>
-      _mockLessons.fold(0.0, (s, l) => s + _lessonW(l));
+      widget.lessons.fold(0.0, (s, l) => s + _lessonW(l));
 
   @override
-  void dispose() { _scrollCtrl.dispose(); super.dispose(); }
+  void initState() {
+    super.initState();
+    _vertLeft.addListener(() {
+      if (_syncing) return;
+      _syncing = true;
+      _vertRight.jumpTo(_vertLeft.offset);
+      _syncing = false;
+    });
+    _vertRight.addListener(() {
+      if (_syncing) return;
+      _syncing = true;
+      _vertLeft.jumpTo(_vertRight.offset);
+      _syncing = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _hCtrl.dispose();
+    _vertLeft.dispose();
+    _vertRight.dispose();
+    super.dispose();
+  }
 
   // ── Colour helpers ─────────────────────────────────────────────────────────
 
@@ -459,13 +526,6 @@ class _GradesTabState extends State<_GradesTab> {
     if (code == 'Х')  return const Color(0xFFDC2626);
     if (code != null && code != 'П') return const Color(0xFFD97706);
     return Colors.transparent;
-  }
-
-  Color _scoreCellBg(double score, double max) {
-    final pct = score / max * 100;
-    if (pct >= 75) return const Color(0xFFDCFCE7);
-    if (pct >= 50) return const Color(0xFFFEF3C7);
-    return const Color(0xFFFEE2E2);
   }
 
   Color _scoreCellFg(double score, double max) {
@@ -537,7 +597,7 @@ class _GradesTabState extends State<_GradesTab> {
                       color: AppTheme.surface,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: AppTheme.border)),
-                  child: Text(_mockLessons[lessonIdx]['code'] as String,
+                  child: Text(widget.lessons[lessonIdx]['code'] as String,
                       style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
                 ),
               ]),
@@ -601,7 +661,7 @@ class _GradesTabState extends State<_GradesTab> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${_mockLessons[lessonIdx]['code']} · Макс: $maxScore',
+              Text('${widget.lessons[lessonIdx]['code']} · Макс: $maxScore',
                   style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
               const SizedBox(height: 12),
               TextField(
@@ -654,7 +714,7 @@ class _GradesTabState extends State<_GradesTab> {
   @override
   Widget build(BuildContext context) {
     final cadets  = widget.scores.keys.toList();
-    final lessons = _mockLessons;
+    final lessons = widget.lessons;
 
     return Column(children: [
       // Stats bar
@@ -717,6 +777,7 @@ class _GradesTabState extends State<_GradesTab> {
                 // Data rows
                 Expanded(
                   child: ListView.builder(
+                    controller: _vertLeft,
                     physics: const ClampingScrollPhysics(),
                     itemCount: cadets.length,
                     itemExtent: _rowH,
@@ -724,8 +785,8 @@ class _GradesTabState extends State<_GradesTab> {
                       final name = cadets[i];
                       final cadetScores = widget.scores[name]!;
                       final total = cadetScores.fold(0.0, (s, v) => s + (v ?? 0.0));
-                      final pct = _maxTotalScore > 0
-                          ? (total / _maxTotalScore * 100).round().toDouble()
+                      final pct = widget.maxTotalScore > 0
+                          ? (total / widget.maxTotalScore * 100).round().toDouble()
                           : 0.0;
                       final isEven = i % 2 == 0;
                       return Container(
@@ -783,7 +844,7 @@ class _GradesTabState extends State<_GradesTab> {
             // ── Scrollable right: lessons ──────────────────────────────────
             Expanded(
               child: SingleChildScrollView(
-                controller: _scrollCtrl,
+                controller: _hCtrl,
                 scrollDirection: Axis.horizontal,
                 child: SizedBox(
                   width: _totalScrollW,
@@ -870,6 +931,7 @@ class _GradesTabState extends State<_GradesTab> {
                     // Data rows
                     Expanded(
                       child: ListView.builder(
+                        controller: _vertRight,
                         physics: const ClampingScrollPhysics(),
                         itemCount: cadets.length,
                         itemExtent: _rowH,
@@ -1040,8 +1102,9 @@ class _LegendDot extends StatelessWidget {
 // ── Lessons tab ───────────────────────────────────────────────────────────────
 
 class _LessonsTab extends StatelessWidget {
+  final List<Map<String, dynamic>> lessons;
   final VoidCallback onAdd;
-  const _LessonsTab({required this.onAdd});
+  const _LessonsTab({required this.lessons, required this.onAdd});
 
   Color _typeColor(String type) {
     switch (type) {
@@ -1068,7 +1131,7 @@ class _LessonsTab extends StatelessWidget {
               decoration: BoxDecoration(
                   color: AppTheme.surface, borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: AppTheme.border)),
-              child: Text('Всього: ${_mockLessons.length}',
+              child: Text('Всього: ${lessons.length}',
                   style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
             ),
           ]),
@@ -1086,7 +1149,7 @@ class _LessonsTab extends StatelessWidget {
             ]),
           ),
           const Divider(height: 1),
-          ..._mockLessons.map((l) => Column(children: [
+          ...lessons.map((l) => Column(children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(children: [

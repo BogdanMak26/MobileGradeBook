@@ -5,6 +5,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../core/utils/app_constants.dart';
+import '../../../../core/api/repositories.dart';
+import '../../../../core/utils/military_labels.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 
 class AnalyticsPage extends ConsumerStatefulWidget {
@@ -18,6 +20,10 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
   String _search = '';
+
+  // API data
+  List<Map<String, dynamic>> _apiCadets = [];
+  bool _isLoading = false;
 
   // Фільтри
   String? _selectedFaculty;
@@ -51,65 +57,54 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
         _selectedGroup = null;
       });
 
-  static const List<Map<String, dynamic>> _allCadets = [
-    {'name': 'Макаренко Богдан',   'position': 'Командир відділення', 'group': '221', 'specialty': "Комп'ютерні науки", 'score': 96, 'attendance': 97},
-    {'name': 'Науменко Олексій',   'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 95, 'attendance': 99},
-    {'name': 'Ващик Олександр',    'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 88, 'attendance': 91},
-    {'name': 'Чернікова Катерина', 'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 87, 'attendance': 100},
-    {'name': 'Дубовик Владислав',  'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 84, 'attendance': 92},
-    {'name': 'Бондаренко Дмитро',  'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 81, 'attendance': 89},
-    {'name': 'Кравченко Іван',     'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 79, 'attendance': 94},
-    {'name': 'Мельник Андрій',     'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 75, 'attendance': 87},
-    {'name': 'Гриценко Сергій',    'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 72, 'attendance': 85},
-    {'name': 'Шевченко Тарас',     'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 68, 'attendance': 80},
-    {'name': 'Романенко Василь',   'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 65, 'attendance': 78},
-    {'name': 'Лисенко Микола',     'position': 'Курсант',             'group': '221', 'specialty': "Комп'ютерні науки", 'score': 63, 'attendance': 82},
-  ];
-
-  static List<Map<String, dynamic>> _disciplinesFor(String name) {
-    final disciplines = [
-      'Захист інформації в телекомунікаційних системах',
-      'Комп\'ютерні мережі та технології',
-      "Комп'ютерні науки та інформаційні технології",
-      'Криптографічний захист інформації',
-      'Основи кібербезпеки',
-    ];
-    return List.generate(disciplines.length, (i) => {
-      'name': disciplines[i],
-      'score': 50 + (i * 11 + name.length * 5) % 65,
-      'attendance': 78 + (i * 5 + name.length * 2) % 22,
-      'points': '${60 + (i * 8 + name.length) % 38}/100',
-      'semester': 8,
-    });
+  Future<void> _loadRates() async {
+    final auth = ref.read(authViewModelProvider);
+    final isCadet = auth.role == UserRole.cadet;
+    final groupId = auth.groupId;
+    if (isCadet && groupId == null) return;
+    setState(() => _isLoading = true);
+    try {
+      final result = await ref.read(ratesRepositoryProvider).getRates(
+        groupId: isCadet ? groupId : null,
+        size: 500,
+      );
+      final content = result['content'] as List<dynamic>? ?? [];
+      final cadets = content.map((r) {
+        final m = r as Map<String, dynamic>;
+        final last  = m['lastName']  as String? ?? '';
+        final first = m['firstName'] as String? ?? '';
+        return <String, dynamic>{
+          'cadetId':        (m['cadetId'] as num?)?.toInt(),
+          'name':           '$last $first'.trim(),
+          'position':       MilitaryLabels.position(m['position'] as String?),
+          'group':          m['groupName']   as String? ?? '',
+          'specialty':      MilitaryLabels.speciality(m['speciality'] as String?),
+          'facultyName':    m['facultyName'] as String? ?? '',
+          'enrollmentYear': m['enrollmentYear']?.toString() ?? '',
+          'score':          ((m['ratePercentage']    as num?) ?? 0).round(),
+          'attendance':     ((m['presentPercentage'] as num?) ?? 0).round(),
+        };
+      }).toList();
+      if (mounted) setState(() { _apiCadets = cadets; _isLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadRates());
   }
 
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
-  List<Map<String, dynamic>> get _filtered => _allCadets.where((c) {
-        final matchSearch = c['name']
-            .toString()
-            .toLowerCase()
-            .contains(_search.toLowerCase());
-        final matchGroup =
-            _selectedGroup == null || c['group'] == _selectedGroup;
-        return matchSearch && matchGroup;
-      }).toList();
-
   void _showDetails(BuildContext context, Map<String, dynamic> cadet, int rank) {
     showDialog(
       context: context,
-      builder: (_) => _CadetDetailsDialog(
-        cadet: cadet,
-        rank: rank,
-        disciplines: _disciplinesFor(cadet['name'] as String),
-      ),
+      builder: (_) => _CadetDetailsDialog(cadet: cadet, rank: rank),
     );
   }
 
@@ -120,10 +115,7 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     final isCadet = role == UserRole.cadet;
     final fullName = auth.fullName ?? auth.email ?? 'Користувач';
 
-    // Курсант бачить тільки свою групу
-    final visibleCadets = isCadet
-        ? _allCadets.where((c) => c['group'] == '221').toList()
-        : _allCadets;
+    final visibleCadets = _apiCadets;
 
     final filtered = visibleCadets.where((c) {
       final matchSearch = c['name']
@@ -202,9 +194,11 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
                         border: Border.all(
                             color: AppTheme.secondary, width: 1.5),
                       ),
-                      child: const Text(
-                        'Група: 221',
-                        style: TextStyle(
+                      child: Text(
+                        auth.groupName != null
+                            ? 'Група: ${auth.groupName}'
+                            : 'Моя група',
+                        style: const TextStyle(
                             color: AppTheme.secondary,
                             fontWeight: FontWeight.w600,
                             fontSize: 14),
@@ -327,25 +321,51 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
           // ── Рейтинг або Статистика ─────────────────────────────────
           SliverToBoxAdapter(
             child: _tab.index == 0
-                ? Column(
-                    children: [
-                      ...List.generate(filtered.length, (i) {
-                        final cadet = filtered[i];
-                        final rank = visibleCadets.indexOf(cadet) + 1;
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                          child: _CadetRankCard(
-                            cadet: cadet,
-                            rank: rank,
-                            onTap: () =>
-                                _showDetails(context, cadet, rank),
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 24),
-                    ],
-                  )
-                : _StatisticsTab(cadets: visibleCadets),
+                ? _isLoading
+                    ? const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _apiCadets.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(40),
+                            child: Center(
+                              child: Text('Немає даних',
+                                  style: TextStyle(color: AppTheme.textMid)),
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              ...List.generate(filtered.length, (i) {
+                                final cadet = filtered[i];
+                                final rank = visibleCadets.indexOf(cadet) + 1;
+                                return Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                  child: _CadetRankCard(
+                                    cadet: cadet,
+                                    rank: rank,
+                                    onTap: () =>
+                                        _showDetails(context, cadet, rank),
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 24),
+                            ],
+                          )
+                : _isLoading
+                    ? const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _apiCadets.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(40),
+                            child: Center(
+                              child: Text('Немає даних',
+                                  style: TextStyle(color: AppTheme.textMid)),
+                            ),
+                          )
+                        : _StatisticsTab(cadets: visibleCadets),
           ),
         ],
       ),
@@ -815,25 +835,75 @@ class _RatingPill extends StatelessWidget {
 
 // ── Діалог деталей курсанта ───────────────────────────────────────────────────
 
-class _CadetDetailsDialog extends StatelessWidget {
+class _CadetDetailsDialog extends ConsumerStatefulWidget {
   final Map<String, dynamic> cadet;
   final int rank;
-  final List<Map<String, dynamic>> disciplines;
 
-  const _CadetDetailsDialog({
-    required this.cadet,
-    required this.rank,
-    required this.disciplines,
-  });
+  const _CadetDetailsDialog({required this.cadet, required this.rank});
+
+  @override
+  ConsumerState<_CadetDetailsDialog> createState() => _CadetDetailsDialogState();
+}
+
+class _CadetDetailsDialogState extends ConsumerState<_CadetDetailsDialog> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _disciplines = [];
+  String? _facultyName;
+  String? _enrollmentYear;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDetails();
+  }
+
+  Future<void> _fetchDetails() async {
+    final cadetId = widget.cadet['cadetId'] as int?;
+    if (cadetId == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final data = await ref.read(ratesRepositoryProvider).getCadetRates(cadetId);
+      final rawDisc = data['disciplines'] as List<dynamic>? ?? [];
+      final disciplines = rawDisc.map((d) {
+        final m = d as Map<String, dynamic>;
+        final studentMarks = (m['studentMarks'] as num?)?.toStringAsFixed(0) ?? '0';
+        final maxMarks     = (m['maxPossibleMarks'] as num?)?.toStringAsFixed(0) ?? '0';
+        final sems         = m['semesterNumbers'] as List<dynamic>?;
+        return <String, dynamic>{
+          'name':       m['disciplineFullName']  as String?
+                     ?? m['disciplineShortName'] as String? ?? '',
+          'score':      ((m['ratePercentage']       as num?) ?? 0).round(),
+          'attendance': ((m['attendancePercentage'] as num?) ?? 0).round(),
+          'points':     '$studentMarks/$maxMarks',
+          'semester':   sems?.isNotEmpty == true ? sems!.first : null,
+        };
+      }).toList();
+      if (mounted) setState(() {
+        _disciplines  = disciplines;
+        _facultyName  = data['facultyName'] as String?;
+        _enrollmentYear = data['enrollmentYear']?.toString();
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   String get _initials {
-    final parts = (cadet['name'] as String).split(' ');
+    final parts = (widget.cadet['name'] as String).split(' ');
     return parts.take(2).map((w) => w.isEmpty ? '' : w[0]).join();
   }
 
   @override
   Widget build(BuildContext context) {
+    final cadet = widget.cadet;
     final overallScore = cadet['score'] as int;
+    final facultyName  = _facultyName ?? cadet['facultyName'] as String? ?? '';
+    final year         = _enrollmentYear?.isNotEmpty == true
+        ? _enrollmentYear!
+        : (cadet['enrollmentYear'] as String? ?? '—');
 
     return Dialog(
       backgroundColor: const Color(0xFFF1F5F9),
@@ -842,7 +912,7 @@ class _CadetDetailsDialog extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Кольорова шапка ────────────────────────────────────────
+          // ── Кольорова шапка ──────────────────────────────────────────
           Container(
             padding: const EdgeInsets.fromLTRB(18, 20, 12, 20),
             decoration: const BoxDecoration(
@@ -858,31 +928,25 @@ class _CadetDetailsDialog extends StatelessWidget {
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: Colors.white.withOpacity(0.2),
-                  child: Text(
-                    _initials,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                    ),
-                  ),
+                  child: Text(_initials,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20)),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        cadet['name'] as String,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
+                      Text(cadet['name'] as String,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15)),
                       const SizedBox(height: 7),
                       Row(children: [
-                        _HeaderChip(label: '#$rank у групі'),
+                        _HeaderChip(label: '#${widget.rank} у групі'),
                         const SizedBox(width: 8),
                         _HeaderChip(label: 'Рейтинг: $overallScore%'),
                       ]),
@@ -899,119 +963,122 @@ class _CadetDetailsDialog extends StatelessWidget {
             ),
           ),
 
-          // ── Контент (скролиться) ────────────────────────────────────
+          // ── Контент ──────────────────────────────────────────────────
           Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Інфо-плитки
-                  Row(children: [
-                    _InfoTile(
-                      icon: Icons.group_outlined,
-                      label: 'Група',
-                      value: cadet['group'] as String,
-                    ),
-                    const SizedBox(width: 8),
-                    _InfoTile(
-                      icon: Icons.calendar_today_outlined,
-                      label: 'Рік вступу',
-                      value: '2022',
-                    ),
-                  ]),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(children: [
-                      const Icon(Icons.school_outlined,
-                          size: 16, color: AppTheme.textMid),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Спеціальність',
-                                style: TextStyle(
-                                    fontSize: 11, color: AppTheme.textMid)),
-                            const SizedBox(height: 2),
-                            Text(cadet['specialty'] as String,
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textDark)),
-                          ],
+            child: _loading
+                ? const Padding(
+                    padding: EdgeInsets.all(40),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          _InfoTile(
+                            icon: Icons.group_outlined,
+                            label: 'Група',
+                            value: cadet['group'] as String? ?? '—',
+                          ),
+                          const SizedBox(width: 8),
+                          _InfoTile(
+                            icon: Icons.calendar_today_outlined,
+                            label: 'Рік вступу',
+                            value: year,
+                          ),
+                        ]),
+                        const SizedBox(height: 8),
+                        _DetailRow(
+                          icon: Icons.school_outlined,
+                          label: 'Спеціальність',
+                          value: cadet['specialty'] as String? ?? '—',
                         ),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(children: [
-                      const Icon(Icons.business_outlined,
-                          size: 16, color: AppTheme.textMid),
-                      const SizedBox(width: 10),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Факультет',
-                              style: TextStyle(
-                                  fontSize: 11, color: AppTheme.textMid)),
-                          SizedBox(height: 2),
-                          Text('Факультет інформаційних технологій',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.textDark)),
-                        ],
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 20),
+                        const SizedBox(height: 8),
+                        if (facultyName.isNotEmpty)
+                          _DetailRow(
+                            icon: Icons.business_outlined,
+                            label: 'Факультет',
+                            value: facultyName,
+                          ),
+                        const SizedBox(height: 20),
 
-                  // Заголовок секції дисциплін
-                  Row(children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4F46E5).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.library_books_outlined,
-                          size: 16, color: Color(0xFF4F46E5)),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('Дисципліни',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: AppTheme.textDark)),
-                  ]),
-                  const SizedBox(height: 8),
-                  // Легенда кольорів
-                  const _ScoreLegend(),
-                  const SizedBox(height: 12),
+                        // Дисципліни
+                        Row(children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4F46E5).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.library_books_outlined,
+                                size: 16, color: Color(0xFF4F46E5)),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Дисципліни (${_disciplines.length})',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: AppTheme.textDark),
+                          ),
+                        ]),
+                        const SizedBox(height: 8),
+                        const _ScoreLegend(),
+                        const SizedBox(height: 12),
 
-                  ...disciplines.map((d) => _DisciplineCard(discipline: d)),
-                ],
-              ),
-            ),
+                        if (_disciplines.isEmpty)
+                          const Text('Дані дисциплін відсутні',
+                              style: TextStyle(
+                                  color: AppTheme.textMid,
+                                  fontStyle: FontStyle.italic))
+                        else
+                          ..._disciplines.map((d) => _DisciplineCard(discipline: d)),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _DetailRow({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(children: [
+        Icon(icon, size: 16, color: AppTheme.textMid),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(fontSize: 11, color: AppTheme.textMid)),
+              const SizedBox(height: 2),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textDark)),
+            ],
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -1581,7 +1648,7 @@ class _StatisticsTab extends StatelessWidget {
                             final idx = v.toInt();
                             if (idx >= top.length) return const SizedBox();
                             final name = top[idx]['name'] as String;
-                            final lastName = name.split(' ').last;
+                            final lastName = name.split(' ').first;
                             return SideTitleWidget(
                               axisSide: AxisSide.bottom,
                               child: RotatedBox(

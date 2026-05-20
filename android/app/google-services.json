@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1024624127315",
+    "project_id": "gradebookmobile",
+    "storage_bucket": "gradebookmobile.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1024624127315:android:deb1ac644557f5e86d05a6",
+        "android_client_info": {
+          "package_name": "com.viti.gradebook_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCue_-oWYb03tPvxmowwIEUZoKKhqjOaAg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

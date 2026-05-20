@@ -1,89 +1,13 @@
 // lib/features/journals/presentation/pages/journals_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/api/repositories.dart';
+import '../../../../features/disciplines/data/repositories/disciplines_repository.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/add_discipline_sheet.dart';
 import '../../../grades/presentation/pages/grade_journal_page.dart';
 
-// ── Mock data ─────────────────────────────────────────────────────────────────
-
-const _kafedras = [
-  {'id': 1,  'name': 'Кафедра №1',  'desc': 'Фундаментальних дисциплін'},
-  {'id': 2,  'name': 'Кафедра №2',  'desc': 'Іноземних мов'},
-  {'id': 3,  'name': 'Кафедра №3',  'desc': 'Автомобільної техніки'},
-  {'id': 21, 'name': 'Кафедра №21', 'desc': 'Інформаційних систем та технологій'},
-  {'id': 22, 'name': 'Кафедра №22', 'desc': "Комп'ютерних наук та інтелектуальних технологій"},
-];
-
-const _courses = [
-  {'id': 1, 'name': '1 курс', 'year': 2025, 'groups': 15,
-    'specialties': ["Електроніка", "Комп'ютерні науки", "ІСТ", "Озброєння", "Кібербезпека", "Військове управління"]},
-  {'id': 2, 'name': '2 курс', 'year': 2024, 'groups': 14,
-    'specialties': ["Електроніка", "Комп'ютерні науки", "ІСТ", "Озброєння", "Кібербезпека"]},
-  {'id': 3, 'name': '3 курс', 'year': 2023, 'groups': 12,
-    'specialties': ["Електроніка", "Комп'ютерні науки", "ІСТ"]},
-  {'id': 4, 'name': '4 курс', 'year': 2022, 'groups': 10,
-    'specialties': ["Електроніка", "Комп'ютерні науки"]},
-];
-
-// Групи по курсу
-const _groupsByCourse = <int, List<Map<String, dynamic>>>{
-  1: [
-    {'id': 151, 'name': '151', 'specialty': 'Електроніка, електронні комунікації, приладобудування', 'year': 2025, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 152, 'name': '152', 'specialty': 'Електроніка, електронні комунікації, приладобудування', 'year': 2025, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 153, 'name': '153', 'specialty': "Комп'ютерні науки", 'year': 2025, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 154, 'name': '154', 'specialty': "Комп'ютерні науки", 'year': 2025, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 155, 'name': '155', 'specialty': 'ІСТ', 'year': 2025, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-  ],
-  2: [
-    {'id': 221, 'name': '221', 'specialty': "Комп'ютерні науки", 'year': 2024, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 222, 'name': '222', 'specialty': "Комп'ютерні науки", 'year': 2024, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 231, 'name': '231', 'specialty': 'ІСТ', 'year': 2024, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 241, 'name': '241', 'specialty': 'Електроніка', 'year': 2024, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-  ],
-  3: [
-    {'id': 321, 'name': '321', 'specialty': "Комп'ютерні науки", 'year': 2023, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 331, 'name': '331', 'specialty': 'ІСТ', 'year': 2023, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-  ],
-  4: [
-    {'id': 421, 'name': '421', 'specialty': "Комп'ютерні науки", 'year': 2022, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-    {'id': 431, 'name': '431', 'specialty': 'Електроніка', 'year': 2022, 'degree': 'Бакалавр', 'type': 'Очна ф.н.'},
-  ],
-};
-
-// Дисципліни по групі (groupId -> список дисциплін з journalId)
-const _disciplinesByGroup = <int, List<Map<String, dynamic>>>{
-  151: [
-    {'disciplineId': 37, 'short': 'ІМ', 'name': 'Іноземна мова', 'journalId': 20, 'semester': 2, 'journals': 64},
-    {'disciplineId': 38, 'short': 'ТСА', 'name': 'Технології системного адміністрування', 'journalId': 21, 'semester': 2, 'journals': 2},
-  ],
-  152: [
-    {'disciplineId': 37, 'short': 'ІМ', 'name': 'Іноземна мова', 'journalId': 22, 'semester': 2, 'journals': 64},
-    {'disciplineId': 35, 'short': 'РПЗ', 'name': 'Розробка програмного забезпечення для мобільних пристроїв', 'journalId': 23, 'semester': 2, 'journals': 2},
-  ],
-  153: [
-    {'disciplineId': 36, 'short': 'ПІС', 'name': 'Проєктування інформаційних систем', 'journalId': 24, 'semester': 2, 'journals': 3},
-    {'disciplineId': 37, 'short': 'ІМ', 'name': 'Іноземна мова', 'journalId': 25, 'semester': 2, 'journals': 64},
-  ],
-  221: [
-    {'disciplineId': 35, 'short': 'РПЗ', 'name': 'Розробка програмного забезпечення для мобільних пристроїв', 'journalId': 1, 'semester': 8, 'journals': 2},
-    {'disciplineId': 36, 'short': 'ПІС', 'name': 'Проєктування інформаційних систем', 'journalId': 3, 'semester': 6, 'journals': 3},
-    {'disciplineId': 38, 'short': 'ТСА', 'name': 'Технології системного адміністрування', 'journalId': 9, 'semester': 4, 'journals': 2},
-  ],
-  222: [
-    {'disciplineId': 35, 'short': 'РПЗ', 'name': 'Розробка програмного забезпечення для мобільних пристроїв', 'journalId': 2, 'semester': 8, 'journals': 2},
-    {'disciplineId': 38, 'short': 'ТСА', 'name': 'Технології системного адміністрування', 'journalId': 10, 'semester': 4, 'journals': 2},
-  ],
-  241: [
-    {'disciplineId': 33, 'short': 'ДМ', 'name': 'Дискретна математика', 'journalId': 6, 'semester': 4, 'journals': 7},
-  ],
-  321: [
-    {'disciplineId': 36, 'short': 'ПІС', 'name': 'Проєктування інформаційних систем', 'journalId': 30, 'semester': 6, 'journals': 3},
-  ],
-  421: [
-    {'disciplineId': 35, 'short': 'РПЗ', 'name': 'Розробка програмного забезпечення для мобільних пристроїв', 'journalId': 40, 'semester': 8, 'journals': 2},
-  ],
-};
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
@@ -157,26 +81,79 @@ class _JournalsPageState extends State<JournalsPage>
 
 // ── Кафедри → Дисципліни кафедри ────────────────────────────────────────────
 
-class _KafedrasTab extends StatelessWidget {
+class _KafedrasTab extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_KafedrasTab> createState() => _KafedrasTabState();
+}
+
+class _KafedrasTabState extends ConsumerState<_KafedrasTab> {
+  List<Map<String, dynamic>> _kafedras = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _isLoading = true; _error = null; });
+    try {
+      final raw = await ref.read(kafedrasRepositoryProvider).getKafedras();
+      setState(() {
+        _kafedras = raw.map((e) => e as Map<String, dynamic>).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() { _isLoading = false; _error = e.toString(); });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+            const SizedBox(height: 12),
+            Text(_error!, textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textMid)),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+          ],
+        ),
+      );
+    }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _kafedras.length,
       itemBuilder: (context, i) {
         final k = _kafedras[i];
+        final kafedraId = k['id'] as int?;
+        final name = k['name']?.toString() ?? '—';
+        final desc = k['description']?.toString() ?? k['desc']?.toString() ?? '';
         return _CardTile(
           icon: Icons.school,
-          title: k['name'] as String,
-          subtitle: k['desc'] as String,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => _KafedraDisciplinesPage(
-                kafedraName: k['name'] as String,
+          title: name,
+          subtitle: desc,
+          onTap: () {
+            if (kafedraId == null) return;
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => _KafedraDisciplinesPage(
+                  kafedraId: kafedraId,
+                  kafedraName: name,
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -185,15 +162,82 @@ class _KafedrasTab extends StatelessWidget {
 
 // ── Курси → Групи → Дисципліни групи → Журнал ───────────────────────────────
 
-class _CoursesTab extends StatelessWidget {
+class _CoursesTab extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_CoursesTab> createState() => _CoursesTabState();
+}
+
+class _CoursesTabState extends ConsumerState<_CoursesTab> {
+  // year → groups
+  Map<int, List<Map<String, dynamic>>> _byYear = {};
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _isLoading = true; _error = null; });
+    try {
+      final raw = await ref.read(groupsRepositoryProvider).getGroups();
+      final grouped = <int, List<Map<String, dynamic>>>{};
+      for (final item in raw) {
+        final g = item as Map<String, dynamic>;
+        final year = g['yearStart'] as int? ??
+            g['enrollmentYear'] as int? ??
+            g['year'] as int? ?? 0;
+        grouped.putIfAbsent(year, () => []).add(g);
+      }
+      // Sort years descending (newest first)
+      final sorted = Map.fromEntries(
+        grouped.entries.toList()..sort((a, b) => b.key.compareTo(a.key)),
+      );
+      setState(() { _byYear = sorted; _isLoading = false; });
+    } catch (e) {
+      setState(() { _isLoading = false; _error = e.toString(); });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+            const SizedBox(height: 12),
+            Text(_error!, textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textMid)),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+          ],
+        ),
+      );
+    }
+
+    final entries = _byYear.entries.toList();
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: _courses.length,
+      itemCount: entries.length,
       itemBuilder: (context, i) {
-        final c = _courses[i];
-        final specs = c['specialties'] as List;
+        final year = entries[i].key;
+        final groups = entries[i].value;
+        // Collect unique specialties
+        final specs = groups
+            .map((g) => g['specialty']?.toString() ??
+                g['specialization']?.toString() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toSet()
+            .toList();
+        final courseName = 'Набір $year';
+
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(16),
@@ -205,7 +249,7 @@ class _CoursesTab extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Expanded(
-                child: Text(c['name'] as String,
+                child: Text(courseName,
                     style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -213,36 +257,39 @@ class _CoursesTab extends StatelessWidget {
               ),
               const Icon(Icons.people_outline, color: AppTheme.primary),
             ]),
-            const SizedBox(height: 10),
-            const Text('Спеціальності:',
-                style: TextStyle(fontSize: 12, color: AppTheme.textMid)),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6, runSpacing: 6,
-              children: specs.map((s) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: Text(s as String,
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textDark)),
-              )).toList(),
-            ),
+            if (specs.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text('Спеціальності:',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMid)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6, runSpacing: 6,
+                children: specs.map((s) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Text(s,
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textDark)),
+                )).toList(),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(children: [
-              _InfoBadge(label: 'Рік вступу', value: '${c['year']}'),
+              _InfoBadge(label: 'Рік вступу', value: '$year'),
               const SizedBox(width: 8),
-              _InfoBadge(label: 'Груп', value: '${c['groups']}'),
+              _InfoBadge(label: 'Груп', value: '${groups.length}'),
               const Spacer(),
               OutlinedButton(
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => _GroupsPage(
-                      courseId: c['id'] as int,
-                      courseName: c['name'] as String,
+                      yearStart: year,
+                      courseName: courseName,
+                      groups: groups,
                     ),
                   ),
                 ),
@@ -267,9 +314,14 @@ class _CoursesTab extends StatelessWidget {
 // ── Список груп курсу ────────────────────────────────────────────────────────
 
 class _GroupsPage extends StatefulWidget {
-  final int courseId;
+  final int yearStart;
   final String courseName;
-  const _GroupsPage({required this.courseId, required this.courseName});
+  final List<Map<String, dynamic>> groups;
+  const _GroupsPage({
+    required this.yearStart,
+    required this.courseName,
+    required this.groups,
+  });
 
   @override
   State<_GroupsPage> createState() => _GroupsPageState();
@@ -280,9 +332,8 @@ class _GroupsPageState extends State<_GroupsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final groups = _groupsByCourse[widget.courseId] ?? [];
-    final filtered = groups
-        .where((g) => g['name'].toString().toLowerCase()
+    final filtered = widget.groups
+        .where((g) => (g['name']?.toString() ?? '').toLowerCase()
             .contains(_search.toLowerCase()))
         .toList();
 
@@ -341,7 +392,7 @@ class _GroupsPageState extends State<_GroupsPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        Text(g['name'] as String,
+                        Text(g['name']?.toString() ?? '—',
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 18,
@@ -350,25 +401,29 @@ class _GroupsPageState extends State<_GroupsPage> {
                         const Icon(Icons.people_outline, color: AppTheme.primary),
                       ]),
                       const SizedBox(height: 10),
-                      _InfoRow(label: 'Спеціальність:', value: g['specialty'] as String),
+                      _InfoRow(label: 'Спеціальність:', value: g['specialty']?.toString() ?? g['specialization']?.toString() ?? '—'),
                       const SizedBox(height: 4),
-                      _InfoRow(label: 'Ступінь:', value: g['degree'] as String),
+                      _InfoRow(label: 'Ступінь:', value: g['degree']?.toString() ?? '—'),
                       const SizedBox(height: 10),
                       Row(children: [
-                        _InfoBadge(label: 'Рік вступу', value: '${g['year']}'),
+                        _InfoBadge(label: 'Рік вступу', value: (g['yearStart'] ?? g['enrollmentYear'] ?? g['year'])?.toString() ?? '—'),
                         const SizedBox(width: 8),
-                        _InfoBadge(label: 'Тип', value: g['type'] as String),
+                        _InfoBadge(label: 'Тип', value: g['formOfStudy']?.toString() ?? g['type']?.toString() ?? '—'),
                         const Spacer(),
                         OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => _GroupDisciplinesPage(
-                                groupId: g['id'] as int,
-                                groupName: g['name'] as String,
+                          onPressed: () {
+                            final groupId = g['id'] as int?;
+                            if (groupId == null) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => _GroupDisciplinesPage(
+                                  groupId: groupId,
+                                  groupName: g['name']?.toString() ?? '—',
+                                ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppTheme.primaryDark,
                             side: const BorderSide(color: AppTheme.primaryDark),
@@ -396,43 +451,57 @@ class _GroupsPageState extends State<_GroupsPage> {
 
 // ── Дисципліни конкретної групи ──────────────────────────────────────────────
 
-class _GroupDisciplinesPage extends StatefulWidget {
+class _GroupDisciplinesPage extends ConsumerStatefulWidget {
   final int groupId;
   final String groupName;
   const _GroupDisciplinesPage({required this.groupId, required this.groupName});
 
   @override
-  State<_GroupDisciplinesPage> createState() => _GroupDisciplinesPageState();
+  ConsumerState<_GroupDisciplinesPage> createState() => _GroupDisciplinesPageState();
 }
 
-class _GroupDisciplinesPageState extends State<_GroupDisciplinesPage> {
+class _GroupDisciplinesPageState extends ConsumerState<_GroupDisciplinesPage> {
   String _search = '';
+  List<Map<String, dynamic>> _journals = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() { _isLoading = true; _error = null; });
+    try {
+      final raw = await ref.read(journalsRepositoryProvider).getJournals(groupId: widget.groupId);
+      setState(() {
+        _journals = raw.map((e) => e as Map<String, dynamic>).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() { _isLoading = false; _error = e.toString(); });
+    }
+  }
 
   void _showCreateJournalForGroupDialog(BuildContext context) {
-    // Знаходимо курс та рік набору для цієї групи
-    int courseId = 2;
-    int enrollYear = DateTime.now().year - 1;
-    for (final entry in _groupsByCourse.entries) {
-      for (final g in entry.value) {
-        if (g['id'] == widget.groupId) {
-          courseId = entry.key;
-          enrollYear = g['year'] as int;
-          break;
-        }
+    // Унікальні дисципліни з журналів
+    final seen = <int>{};
+    final groupDisciplines = <Map<String, dynamic>>[];
+    for (final j in _journals) {
+      final dId = j['disciplineId'] as int? ?? 0;
+      if (seen.add(dId)) {
+        groupDisciplines.add({'id': dId, 'name': j['disciplineName'] ?? '', 'short': j['disciplineName'] ?? ''});
       }
     }
 
-    // Будуємо семестри один раз
+    // 8 семестрів (4 роки) — загальна форма
     final semesters = <String>[];
-    for (int i = 0; i < courseId * 2; i++) {
-      final sem = i + 1;
-      final yearStart = enrollYear + (i ~/ 2);
-      semesters.add('Семестр $sem (бакалаври) ($yearStart–${yearStart + 1})');
+    for (int i = 0; i < 8; i++) {
+      semesters.add('Семестр ${i + 1}');
     }
     final semSelected = List<bool>.filled(semesters.length, false);
-
-    // Дисципліни для цієї групи
-    final groupDisciplines = _disciplinesByGroup[widget.groupId] ?? [];
 
     Map<String, dynamic>? selectedDisc;
 
@@ -651,11 +720,9 @@ class _GroupDisciplinesPageState extends State<_GroupDisciplinesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final disciplines = _disciplinesByGroup[widget.groupId] ?? [];
-    final filtered = disciplines
+    final filtered = _journals
         .where((d) =>
-            d['name'].toString().toLowerCase().contains(_search.toLowerCase()) ||
-            d['short'].toString().toLowerCase().contains(_search.toLowerCase()))
+            (d['disciplineName'] ?? '').toString().toLowerCase().contains(_search.toLowerCase()))
         .toList();
 
     return Scaffold(
@@ -666,7 +733,24 @@ class _GroupDisciplinesPageState extends State<_GroupDisciplinesPage> {
           child: Container(height: 3, color: AppTheme.primary),
         ),
       ),
-      body: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                      const SizedBox(height: 12),
+                      Text('Помилка: $_error',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: AppTheme.textMid)),
+                      const SizedBox(height: 16),
+                      ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+                    ],
+                  ),
+                )
+              : Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextButton.icon(
@@ -731,6 +815,20 @@ class _GroupDisciplinesPageState extends State<_GroupDisciplinesPage> {
                         return const _AddDisciplineCard();
                       }
                       final d = filtered[i];
+                      // API returns nested semesters array and journalId (not id)
+                      final dSemesters = d['semesters'] as List<dynamic>?;
+                      final dFirstSem = dSemesters?.isNotEmpty == true
+                          ? dSemesters!.first as Map<String, dynamic>?
+                          : null;
+                      final dSemNum = dFirstSem?['semesterNumber'] as int?
+                          ?? d['semester'] as int?;
+                      final dJournalId = d['journalId'] as int? ?? d['id'] as int?;
+                      final dGroupId = d['groupId'] as int?;
+                      final dDisciplineId = d['disciplineId'] as int?;
+                      final dSemesterId = dFirstSem?['semesterId'] as int?;
+                      final dDiscName = d['disciplineFullName']?.toString()
+                          ?? d['disciplineName']?.toString() ?? '—';
+                      final dDiscShort = d['disciplineShortName']?.toString();
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
@@ -751,13 +849,13 @@ class _GroupDisciplinesPageState extends State<_GroupDisciplinesPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(d['short'] as String,
+                                    Text('Семестр ${dSemNum ?? '—'}',
                                         style: const TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                             color: AppTheme.primary)),
                                     const SizedBox(height: 2),
-                                    Text(d['name'] as String,
+                                    Text(dDiscName,
                                         style: const TextStyle(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 15,
@@ -771,18 +869,20 @@ class _GroupDisciplinesPageState extends State<_GroupDisciplinesPage> {
                             const SizedBox(height: 12),
                             Row(children: [
                               _InfoBadge(
-                                  label: 'Журналів',
-                                  value: '${d['journals']}'),
+                                  label: 'ID журналу',
+                                  value: '${dJournalId ?? '—'}'),
                               const Spacer(),
                               OutlinedButton(
-                                // ← Тут одразу відкриваємо журнал цієї групи!
-                                onPressed: () => Navigator.push(
+                                onPressed: (dGroupId == null || dDisciplineId == null || dSemesterId == null) ? null : () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => GradeJournalPage(
-                                      disciplineId: d['disciplineId'].toString(),
-                                      groupName: '${widget.groupName} навчальна група',
-                                      semesterId: d['semester'].toString(),
+                                      groupId: dGroupId,
+                                      disciplineId: dDisciplineId.toString(),
+                                      semesterId: dSemesterId.toString(),
+                                      disciplineShortName: dDiscShort ?? dDiscName,
+                                      groupName: d['groupName']?.toString()
+                                          ?? '${widget.groupName} навчальна група',
                                     ),
                                   ),
                                 ),
@@ -812,33 +912,66 @@ class _GroupDisciplinesPageState extends State<_GroupDisciplinesPage> {
   }
 }
 
-// ── Дисципліни кафедри (зі старої логіки) ───────────────────────────────────
+// ── Дисципліни кафедри ───────────────────────────────────────────────────────
 
-class _KafedraDisciplinesPage extends StatefulWidget {
+class _KafedraDisciplinesPage extends ConsumerStatefulWidget {
+  final int kafedraId;
   final String kafedraName;
-  const _KafedraDisciplinesPage({required this.kafedraName});
+  const _KafedraDisciplinesPage(
+      {required this.kafedraId, required this.kafedraName});
 
   @override
-  State<_KafedraDisciplinesPage> createState() =>
+  ConsumerState<_KafedraDisciplinesPage> createState() =>
       _KafedraDisciplinesPageState();
 }
 
-class _KafedraDisciplinesPageState extends State<_KafedraDisciplinesPage> {
+class _KafedraDisciplinesPageState
+    extends ConsumerState<_KafedraDisciplinesPage> {
   String _search = '';
+  List<Map<String, dynamic>> _disciplines = [];
+  bool _isLoading = true;
+  String? _error;
 
-  static const _disciplines = [
-    {'id': 35, 'name': 'Розробка програмного забезпечення для мобільних пристроїв', 'short': 'РПЗ', 'journals': 2},
-    {'id': 36, 'name': 'Проєктування інформаційних систем', 'short': 'ПІС', 'journals': 3},
-    {'id': 33, 'name': 'Дискретна математика', 'short': 'ДМ', 'journals': 7},
-    {'id': 38, 'name': 'Технології системного адміністрування', 'short': 'ТСА', 'journals': 2},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() { _isLoading = true; _error = null; });
+    try {
+      final raw = await ref
+          .read(disciplinesRepositoryProvider)
+          .getAllDisciplines(kafedraId: widget.kafedraId);
+      setState(() {
+        _disciplines = raw.map((e) => e as Map<String, dynamic>).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() { _isLoading = false; _error = e.toString(); });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Електронний журнал'),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(3),
+            child: Container(height: 3, color: AppTheme.primary),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final filtered = _disciplines
         .where((d) =>
-            d['name'].toString().toLowerCase().contains(_search.toLowerCase()) ||
-            d['short'].toString().toLowerCase().contains(_search.toLowerCase()))
+            (d['fullName'] ?? d['name'] ?? '').toString().toLowerCase().contains(_search.toLowerCase()) ||
+            (d['shortName'] ?? d['short'] ?? '').toString().toLowerCase().contains(_search.toLowerCase()))
         .toList();
 
     return Scaffold(
@@ -891,19 +1024,25 @@ class _KafedraDisciplinesPageState extends State<_KafedraDisciplinesPage> {
               itemBuilder: (context, i) {
                 if (i == filtered.length) return const _AddDisciplineCard();
                 final d = filtered[i];
+                final discId = d['id'] as int?;
+                final discName = d['fullName']?.toString() ?? d['name']?.toString() ?? '—';
+                final discShort = d['shortName']?.toString() ?? d['short']?.toString() ?? '';
                 return _CardTile(
                   icon: Icons.school,
-                  title: '${d['short']} - ${d['name']}',
-                  subtitle: 'Журналів: ${d['journals']}',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => _DisciplineJournalListPage(
-                        disciplineId: d['id'] as int,
-                        disciplineName: d['name'] as String,
+                  title: discShort.isNotEmpty ? '$discShort — $discName' : discName,
+                  subtitle: widget.kafedraName,
+                  onTap: () {
+                    if (discId == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _DisciplineJournalListPage(
+                          disciplineId: discId,
+                          disciplineName: discName,
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               },
             ),
@@ -916,28 +1055,46 @@ class _KafedraDisciplinesPageState extends State<_KafedraDisciplinesPage> {
 
 // ── Список журналів дисципліни (для кафедри) ─────────────────────────────────
 
-class _DisciplineJournalListPage extends StatefulWidget {
+class _DisciplineJournalListPage extends ConsumerStatefulWidget {
   final int disciplineId;
   final String disciplineName;
   const _DisciplineJournalListPage(
       {required this.disciplineId, required this.disciplineName});
 
   @override
-  State<_DisciplineJournalListPage> createState() =>
+  ConsumerState<_DisciplineJournalListPage> createState() =>
       _DisciplineJournalListPageState();
 }
 
 class _DisciplineJournalListPageState
-    extends State<_DisciplineJournalListPage> {
+    extends ConsumerState<_DisciplineJournalListPage> {
   String _search = '';
+  List<Map<String, dynamic>> _journals = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() { _isLoading = true; _error = null; });
+    try {
+      final raw = await ref.read(journalsRepositoryProvider)
+          .getJournals(disciplineId: widget.disciplineId);
+      setState(() {
+        _journals = raw.map((e) => e as Map<String, dynamic>).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() { _isLoading = false; _error = e.toString(); });
+    }
+  }
 
   void _showCreateJournalDialog(BuildContext context) {
     final allGroups = <Map<String, dynamic>>[];
-    for (final entry in _groupsByCourse.entries) {
-      for (final g in entry.value) {
-        allGroups.add({...g, '_courseId': entry.key});
-      }
-    }
 
     Map<String, dynamic>? selectedGroup;
     List<bool> semSelected = [];
@@ -948,11 +1105,9 @@ class _DisciplineJournalListPageState
         builder: (ctx, setDialogState) {
           List<String> semesters = [];
           if (selectedGroup != null) {
-            final courseId = selectedGroup!['_courseId'] as int;
-            final year = selectedGroup!['year'] as int;
-            for (int i = 0; i < courseId * 2; i++) {
+            for (int i = 0; i < 8; i++) {
               final sem = i + 1;
-              final yearStart = year + (i ~/ 2);
+              final yearStart = DateTime.now().year + (i ~/ 2);
               semesters.add('Семестр $sem (бакалаври) ($yearStart-${yearStart + 1})');
             }
             if (semSelected.length != semesters.length) {
@@ -1179,34 +1334,10 @@ class _DisciplineJournalListPageState
     );
   }
 
-  // Всі журнали цієї дисципліни по всіх групах
-  List<Map<String, dynamic>> get _journals {
-    final result = <Map<String, dynamic>>[];
-    _disciplinesByGroup.forEach((groupId, disciplines) {
-      for (final d in disciplines) {
-        if (d['disciplineId'] == widget.disciplineId) {
-          // Знайдемо назву групи
-          String groupName = groupId.toString();
-          for (final course in _groupsByCourse.values) {
-            for (final g in course) {
-              if (g['id'] == groupId) groupName = g['name'] as String;
-            }
-          }
-          result.add({
-            ...d,
-            'groupId': groupId,
-            'groupName': groupName,
-          });
-        }
-      }
-    });
-    return result;
-  }
-
   @override
   Widget build(BuildContext context) {
     final filtered = _journals
-        .where((j) => j['groupName'].toString().toLowerCase()
+        .where((j) => (j['groupName'] ?? '').toString().toLowerCase()
             .contains(_search.toLowerCase()))
         .toList();
 
@@ -1218,7 +1349,9 @@ class _DisciplineJournalListPageState
           child: Container(height: 3, color: AppTheme.primary),
         ),
       ),
-      body: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextButton.icon(
@@ -1260,6 +1393,14 @@ class _DisciplineJournalListPageState
                   );
                 }
                 final j = filtered[i];
+                final jSemesters = j['semesters'] as List<dynamic>?;
+                final jFirstSem = jSemesters?.isNotEmpty == true
+                    ? jSemesters!.first as Map<String, dynamic>?
+                    : null;
+                final jSemNum = jFirstSem?['semesterNumber'] as int?
+                    ?? j['semester'] as int?;
+                final jGroupId = j['groupId'] as int?;
+                final jSemesterId = jFirstSem?['semesterId'] as int?;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(16),
@@ -1277,7 +1418,7 @@ class _DisciplineJournalListPageState
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '${j['groupName']} навчальна група',
+                            '${j['groupName'] ?? '—'} навчальна група',
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
@@ -1286,20 +1427,22 @@ class _DisciplineJournalListPageState
                         ),
                       ]),
                       const SizedBox(height: 4),
-                      Text('Семестр: ${j['semester']}',
+                      Text('Семестр: ${jSemNum ?? '—'}',
                           style: const TextStyle(
                               fontSize: 12, color: AppTheme.textMid)),
                       const SizedBox(height: 12),
                       Align(
                         alignment: Alignment.centerRight,
                         child: ElevatedButton(
-                          onPressed: () => Navigator.push(
+                          onPressed: (jGroupId == null || jSemesterId == null) ? null : () => Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) => GradeJournalPage(
+                                groupId: jGroupId,
                                 disciplineId: widget.disciplineId.toString(),
-                                groupName: '${j['groupName']} навчальна група',
-                                semesterId: j['semester'].toString(),
+                                semesterId: jSemesterId.toString(),
+                                disciplineShortName: widget.disciplineName,
+                                groupName: '${j['groupName'] ?? ''} навчальна група',
                               ),
                             ),
                           ),

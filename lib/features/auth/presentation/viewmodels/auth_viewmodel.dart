@@ -9,9 +9,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/api/repositories.dart';
 import '../../../../core/auth/auth_service.dart';
 import '../../../../core/mock/mock_data.dart';
+import '../../../../core/notifications/fcm_service.dart';
 import '../../../../core/utils/app_constants.dart';
 
-enum AuthStatus { initial, loading, authenticated, unauthenticated, error }
+enum AuthStatus { initial, loading, locked, authenticated, unauthenticated, error }
 
 class AuthState {
   final AuthStatus status;
@@ -20,6 +21,12 @@ class AuthState {
   final String? email;
   final String? fullName;
   final String? errorMessage;
+  final String? rank;
+  final String? position;
+  final String? groupName;
+  final String? kafedraName;
+  final int? groupId;
+  final String? facultyName;
 
   const AuthState({
     this.status = AuthStatus.initial,
@@ -28,6 +35,12 @@ class AuthState {
     this.email,
     this.fullName,
     this.errorMessage,
+    this.rank,
+    this.position,
+    this.groupName,
+    this.kafedraName,
+    this.groupId,
+    this.facultyName,
   });
 
   AuthState copyWith({
@@ -37,6 +50,12 @@ class AuthState {
     String? email,
     String? fullName,
     String? errorMessage,
+    String? rank,
+    String? position,
+    String? groupName,
+    String? kafedraName,
+    int? groupId,
+    String? facultyName,
   }) =>
       AuthState(
         status: status ?? this.status,
@@ -45,18 +64,26 @@ class AuthState {
         email: email ?? this.email,
         fullName: fullName ?? this.fullName,
         errorMessage: errorMessage,
+        rank: rank ?? this.rank,
+        position: position ?? this.position,
+        groupName: groupName ?? this.groupName,
+        kafedraName: kafedraName ?? this.kafedraName,
+        groupId: groupId ?? this.groupId,
+        facultyName: facultyName ?? this.facultyName,
       );
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
+  bool get isLocked => status == AuthStatus.locked;
 }
 
 class AuthViewModel extends StateNotifier<AuthState> {
   final AuthService _authService;
   final UserRepository _userRepo;
+  final FcmService _fcmService;
   String? _codeVerifier;
   bool _processingCallback = false;
 
-  AuthViewModel(this._authService, this._userRepo)
+  AuthViewModel(this._authService, this._userRepo, this._fcmService)
       : super(const AuthState()) {
     _initDeepLinks();
     checkAuthStatus();
@@ -76,19 +103,15 @@ class AuthViewModel extends StateNotifier<AuthState> {
     });
   }
 
+  // On app start: checks if a session exists. Sets `locked` (requires device auth)
+  // or `unauthenticated`. Does NOT load user data — that happens after device auth.
   Future<void> checkAuthStatus() async {
     state = state.copyWith(status: AuthStatus.loading);
     try {
       final hasSession = await _authService.hasValidSession();
-      if (hasSession) {
-        final accessToken = await _authService.getValidAccessToken();
-        if (accessToken != null) {
-          final userData = await _userRepo.getMe();
-          _setUserFromData(userData);
-          return;
-        }
-      }
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+      state = state.copyWith(
+        status: hasSession ? AuthStatus.locked : AuthStatus.unauthenticated,
+      );
     } catch (_) {
       state = state.copyWith(status: AuthStatus.unauthenticated);
     }
@@ -112,7 +135,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
       );
 
       if (await canLaunchUrl(authUri)) {
-        await launchUrl(authUri, mode: LaunchMode.externalApplication);
+        await launchUrl(authUri, mode: LaunchMode.platformDefault);
       } else {
         throw Exception('Не вдалося відкрити браузер');
       }
@@ -139,12 +162,12 @@ class AuthViewModel extends StateNotifier<AuthState> {
         _setUserFromData(userData);
       } catch (e) {
         print('[AUTH] getMe() failed: $e');
-        state = AuthState(
-          status: AuthStatus.authenticated,
-          userId: 'unknown',
-          role: UserRole.instructor,
-          email: '',
-          fullName: 'Користувач',
+        final isCfBlock = e.toString().contains('CloudflareAccessBlocked');
+        state = state.copyWith(
+          status: AuthStatus.error,
+          errorMessage: isCfBlock
+              ? 'Сервер заблоковано Cloudflare Access. Зверніться до адміністратора.'
+              : 'Не вдалося завантажити профіль: ${e.toString()}',
         );
       }
     } catch (e) {
@@ -178,10 +201,13 @@ class AuthViewModel extends StateNotifier<AuthState> {
     }
     role ??= data['role'] as String? ?? UserRole.instructor;
 
-    final firstName = data['firstName'] as String? ?? '';
-    final lastName = data['lastName'] as String? ?? '';
+    final firstName = data['name'] as String? ?? data['firstName'] as String? ?? '';
+    final lastName = data['surname'] as String? ?? data['lastName'] as String? ?? '';
     final fullName = data['fullName'] as String? ??
         '$lastName $firstName'.trim();
+
+    final group = data['group'] as Map<String, dynamic>?;
+    final kafedra = data['kafedra'] as Map<String, dynamic>?;
 
     state = AuthState(
       status: AuthStatus.authenticated,
@@ -189,10 +215,19 @@ class AuthViewModel extends StateNotifier<AuthState> {
       role: role,
       email: data['email'] as String?,
       fullName: fullName.isEmpty ? data['email'] as String? : fullName,
+      rank: data['rank'] as String?,
+      position: data['position'] as String?,
+      groupName: group?['name'] as String? ?? data['groupName'] as String?,
+      kafedraName: kafedra?['name'] as String? ?? data['kafedraName'] as String?,
+      groupId: group?['id'] as int? ?? data['groupId'] as int?,
+      facultyName: data['facultyName'] as String?,
     );
+    _fcmService.subscribeToRoleTopic(role);
   }
 
   Future<void> logout() async {
+    _fcmService.unsubscribeFromRoleTopic(state.role);
+
     // Зберігаємо токен до очищення
     String? refreshToken;
     try {
@@ -210,22 +245,32 @@ class AuthViewModel extends StateNotifier<AuthState> {
     }
   }
 
-  // Вхід після успішної біометричної аутентифікації
+  // Called after device/biometric auth passes. Loads user data and sets authenticated.
   Future<bool> loginWithBiometric({String? savedRole}) async {
     state = state.copyWith(status: AuthStatus.loading, errorMessage: null);
     try {
-      // Спочатку перевіряємо реальну сесію (refresh token)
-      final hasSession = await _authService.hasValidSession();
-      if (hasSession) {
-        await checkAuthStatus();
-        if (state.isAuthenticated) return true;
+      final accessToken = await _authService.getValidAccessToken();
+      if (accessToken != null) {
+        final userData = await _userRepo.getMe();
+        _setUserFromData(userData);
+        return true;
       }
-      // Fallback: mock-вхід за збереженою роллю (dev режим)
+      // dev fallback: mock login by saved role
       if (savedRole != null) {
         mockLogin(savedRole);
         return true;
       }
-    } catch (_) {}
+    } catch (e) {
+      print('[AUTH] loginWithBiometric getMe() failed: $e');
+      final isCfBlock = e.toString().contains('CloudflareAccessBlocked');
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: isCfBlock
+            ? 'Сервер заблоковано Cloudflare Access.'
+            : 'Не вдалося завантажити профіль.',
+      );
+      return false;
+    }
     state = state.copyWith(status: AuthStatus.unauthenticated);
     return false;
   }
@@ -237,7 +282,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
   }
 
   void mockLogin(String role) {
-    final user = role == 'CADET'
+    final user = role == UserRole.cadet
         ? MockDataProvider.cadetUser
         : MockDataProvider.currentUser;
     state = AuthState(
@@ -246,7 +291,12 @@ class AuthViewModel extends StateNotifier<AuthState> {
       role: role,
       email: user.email,
       fullName: user.fullName,
+      rank: user.rank,
+      position: user.position,
+      groupName: user.groupName,
+      kafedraName: user.kafedraName,
     );
+    _fcmService.subscribeToRoleTopic(role);
   }
 
   String _generateCodeVerifier() {
@@ -267,5 +317,6 @@ final authViewModelProvider =
   return AuthViewModel(
     ref.read(authServiceProvider),
     ref.read(userRepositoryProvider),
+    ref.read(fcmServiceProvider),
   );
 });

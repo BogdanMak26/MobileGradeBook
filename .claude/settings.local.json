@@ -15,7 +15,17 @@
       "Bash(Select-Object -First 200)",
       "Bash(Out-String)",
       "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook\" -Recurse -Filter \"*.java\")",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "Bash(sort -t. -k2 -n)",
+      "Read(//k/Diplom/**)",
+      "Bash(dart analyze *)",
+      "Bash(Get-ChildItem \"K:\\\\Diplom\\\\gradebook\\\\grade-book-app\\\\src\\\\main\\\\java\\\\com\\\\dep22\\\\gradebookapp\\\\rest\" -Filter \"*.java\")",
+      "Bash(Select-Object Name)",
+      "Bash(xargs grep -l \"ПРИСУТНІЙ\\\\|НАРЯД\\\\|attended\\\\|Attended\\\\|AttendType\\\\|AttendStatus\")",
+      "Bash(xargs grep -l \"position\\\\|speciality\\\\|Position\\\\|Speciality\\\\|CADET\\\\|COMMANDER\")",
+      "Bash(xargs grep -l \"schedule\\\\|розклад\\\\|Schedule\")",
+      "Bash(xargs grep -l \"schedule\\\\|розклад\")",
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook\\\\grade-book-app\\\\src\\\\main\\\\resources\" -File)"
     ]
   }
 }

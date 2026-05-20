@@ -7,6 +7,10 @@ class DisciplineModel {
   final String? teacherName;
   final int? kafedraId;
   final int journalCount;
+  // Populated only for cadet (from /rates/cadets/{id} response)
+  final int? journalId;
+  final int? groupId;
+  final int? semesterId;
 
   const DisciplineModel({
     required this.id,
@@ -15,6 +19,9 @@ class DisciplineModel {
     this.teacherName,
     this.kafedraId,
     this.journalCount = 0,
+    this.journalId,
+    this.groupId,
+    this.semesterId,
   });
 
   factory DisciplineModel.fromJson(Map<String, dynamic> json) {

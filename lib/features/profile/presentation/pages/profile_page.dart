@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:local_auth/local_auth.dart';
 import '../../../../core/auth/biometric_preferences.dart';
-import '../../../../core/mock/mock_data.dart';
 import '../../../../core/utils/app_constants.dart';
+import '../../../../core/utils/military_labels.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 
@@ -37,13 +37,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
   void initState() {
     super.initState();
     final auth = ref.read(authViewModelProvider);
-    final user = auth.role == 'CADET'
-        ? MockDataProvider.cadetUser
-        : MockDataProvider.currentUser;
-    _firstName = user.name;
-    _lastName = user.surname;
-    _rank = user.rank;
-    _position = user.position;
+    final parts = (auth.fullName ?? '').trim().split(' ');
+    _lastName  = parts.isNotEmpty ? parts[0] : '';
+    _firstName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    _rank = MilitaryLabels.rank(auth.rank);
+    _position = MilitaryLabels.position(auth.position);
 
     _ctrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
@@ -70,9 +68,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authViewModelProvider);
-    final user = auth.role == 'CADET'
-        ? MockDataProvider.cadetUser
-        : MockDataProvider.currentUser;
 
     final displayName = '$_lastName $_firstName'.trim();
     final initials = displayName.split(' ').take(2)
@@ -128,7 +123,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                                     fontWeight: FontWeight.bold)),
                             const Spacer(),
                             GestureDetector(
-                              onTap: () => _showEditDialog(context, user),
+                              onTap: () => _showEditDialog(context, auth),
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
@@ -182,7 +177,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                                   fontWeight: FontWeight.bold),
                               textAlign: TextAlign.center),
                           const SizedBox(height: 6),
-                          Text(user.email,
+                          Text(auth.email ?? '',
                               style: TextStyle(
                                   color: Colors.white.withOpacity(0.65),
                                   fontSize: 13)),
@@ -243,7 +238,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                     ],
 
                     // Підрозділ
-                    if (user.kafedraName != null) ...[
+                    if (auth.kafedraName != null) ...[
                       _SectionHeader(
                           icon: Icons.school_rounded,
                           title: 'Підрозділ'),
@@ -251,13 +246,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                         _InfoRow(
                             icon: Icons.business_outlined,
                             label: 'Кафедра',
-                            value: user.kafedraName!),
+                            value: auth.kafedraName!),
                       ]),
                       const SizedBox(height: 16),
                     ],
 
                     // Навчання
-                    if (user.groupName != null) ...[
+                    if (auth.groupName != null) ...[
                       _SectionHeader(
                           icon: Icons.groups_rounded,
                           title: 'Навчання'),
@@ -265,7 +260,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                         _InfoRow(
                             icon: Icons.group_outlined,
                             label: 'Група',
-                            value: user.groupName!),
+                            value: auth.groupName!),
                       ]),
                       const SizedBox(height: 16),
                     ],
@@ -278,7 +273,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                       _InfoRow(
                           icon: Icons.email_outlined,
                           label: 'Email',
-                          value: user.email),
+                          value: auth.email ?? ''),
                     ]),
                     const SizedBox(height: 16),
 
@@ -395,8 +390,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
 
   static const _genders = ['Чоловік', 'Жінка'];
 
-  void _showEditDialog(BuildContext context, MockUser user) {
-    final isCadet = user.role == 'CADET';
+  void _showEditDialog(BuildContext context, AuthState auth) {
+    final isCadet = auth.role == UserRole.cadet;
     final lastNameCtrl  = TextEditingController(text: _lastName);
     final firstNameCtrl = TextEditingController(text: _firstName);
     final phoneCtrl     = TextEditingController(text: _phone);
@@ -462,7 +457,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                   const SizedBox(height: 12),
 
                   // Email — НЕ редагується
-                  _NonEditableField(label: 'EMAIL', value: user.email),
+                  _NonEditableField(label: 'EMAIL', value: auth.email ?? ''),
                   const SizedBox(height: 12),
 
                   Row(children: [
@@ -533,7 +528,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                     Row(children: [
                       Expanded(child: _NonEditableField(
                           label: 'НАВЧАЛЬНА ГРУПА',
-                          value: user.groupName ?? '—')),
+                          value: auth.groupName ?? '—')),
                       const SizedBox(width: 12),
                       Expanded(child: _NonEditableField(
                           label: 'ФАКУЛЬТЕТ',
@@ -543,7 +538,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                   ] else ...[
                     _NonEditableField(
                         label: 'КАФЕДРА',
-                        value: user.kafedraName ?? '—'),
+                        value: auth.kafedraName ?? '—'),
                     const SizedBox(height: 12),
                   ],
 

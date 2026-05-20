@@ -16,18 +16,32 @@ class DisciplinesRepository {
     return list.map((e) => DisciplineModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  // ── Дисципліни групи (для курсанта) ──────────────────────────────────────
-  Future<List<DisciplineModel>> getGroupDisciplines(int groupId) async {
-    final response = await _client.dio.get('/groups/$groupId/disciplines');
-    final list = response.data as List<dynamic>;
-    return list.map((e) => DisciplineModel.fromJson(e as Map<String, dynamic>)).toList();
+  // ── Дисципліни курсанта (з rates endpoint) ──────────────────────────────
+  Future<List<DisciplineModel>> getCadetDisciplines(int cadetId) async {
+    final response = await _client.dio.get('/rates/cadets/$cadetId');
+    final data = response.data;
+    final map = data is Map<String, dynamic> ? data : Map<String, dynamic>.from(data as Map);
+    final disciplines = map['disciplines'] as List<dynamic>? ?? [];
+    return disciplines.map((e) {
+      final m = e as Map<String, dynamic>;
+      final semIds = m['semesterIds'] as List<dynamic>?;
+      return DisciplineModel(
+        id: m['disciplineId'] as int,
+        fullName: m['disciplineFullName'] as String? ?? '',
+        shortName: m['disciplineShortName'] as String?,
+        journalId: m['journalId'] as int?,
+        groupId: m['groupId'] as int?,
+        semesterId: semIds?.isNotEmpty == true ? semIds!.first as int? : null,
+        journalCount: m['journalId'] != null ? 1 : 0,
+      );
+    }).toList();
   }
 
-  // ── Журнали дисципліни (GET /journals?disciplineId={id}) ─────────────────
+  // ── Журнали дисципліни (GET /journals?discipline_id={id}) ───────────────
   Future<List<JournalModel>> getDisciplineJournals(int disciplineId) async {
     final response = await _client.dio.get(
       '/journals',
-      queryParameters: {'disciplineId': disciplineId},
+      queryParameters: {'discipline_id': disciplineId},
     );
     final list = response.data as List<dynamic>;
     return list.map((e) => JournalModel.fromJson(e as Map<String, dynamic>)).toList();

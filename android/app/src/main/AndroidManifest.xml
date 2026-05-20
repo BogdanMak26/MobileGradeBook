@@ -56,6 +56,11 @@
             </intent-filter>
         </activity>
 
+        <!-- FCM: прив'язуємо до існуючого каналу сповіщень -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="gradebook_channel" />
+
         <!-- WorkManager service -->
         <service
             android:name="androidx.work.impl.background.systemjob.SystemJobService"

@@ -19,6 +19,7 @@ import '../../features/groups/presentation/pages/my_group_page.dart';
 import '../../features/admin/presentation/pages/admin_page.dart';
 import '../../features/notifications/presentation/pages/notifications_settings_page.dart';
 import '../../features/auth/presentation/viewmodels/auth_viewmodel.dart';
+import '../../features/auth/presentation/pages/lock_page.dart';
 import '../../shared/theme/app_theme.dart';
 
 const _rootPaths = {
@@ -33,18 +34,34 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     initialLocation: '/splash',
     refreshListenable: notifier,
+    onException: (_, __, router) {
+      // OAuth callback deep links have no matching route — redirect to splash
+      router.go('/splash');
+    },
     redirect: (context, state) {
-      final isAuth = notifier.isAuthenticated;
+      final status = notifier.authStatus;
       final loc = state.matchedLocation;
-      // Splash сам керує навігацією — не перехоплюємо
+
+      // Splash handles its own navigation — don't intercept
       if (loc == '/splash') return null;
-      if (!isAuth && loc != '/login') return '/login';
-      if (isAuth && loc == '/login') return '/dashboard';
+      // Still determining auth state — don't redirect yet
+      if (status == AuthStatus.initial || status == AuthStatus.loading) return null;
+
+      if (status == AuthStatus.locked) {
+        return loc == '/lock' ? null : '/lock';
+      }
+      if (status == AuthStatus.authenticated) {
+        if (loc == '/login' || loc == '/lock') return '/dashboard';
+        return null;
+      }
+      // unauthenticated or error
+      if (loc != '/login') return '/login';
       return null;
     },
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
-      GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
+      GoRoute(path: '/login',  builder: (_, __) => const LoginPage()),
+      GoRoute(path: '/lock',   builder: (_, __) => const LockPage()),
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsSettingsPage()),
       ShellRoute(
         builder: (_, __, child) => MainShell(child: child),
@@ -74,20 +91,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 });
 
 class _AuthRouterNotifier extends ChangeNotifier {
-  bool _isAuthenticated;
+  AuthStatus _authStatus;
   late final VoidCallback _cancel;
 
   _AuthRouterNotifier(Ref ref)
-      : _isAuthenticated = ref.read(authViewModelProvider).isAuthenticated {
+      : _authStatus = ref.read(authViewModelProvider).status {
     _cancel = ref.listen<AuthState>(authViewModelProvider, (prev, next) {
-      if (prev?.isAuthenticated != next.isAuthenticated) {
-        _isAuthenticated = next.isAuthenticated;
+      if (prev?.status != next.status) {
+        _authStatus = next.status;
         notifyListeners();
       }
     }).close;
   }
 
-  bool get isAuthenticated => _isAuthenticated;
+  AuthStatus get authStatus => _authStatus;
+  bool get isAuthenticated => _authStatus == AuthStatus.authenticated;
 
   @override
   void dispose() { _cancel(); super.dispose(); }

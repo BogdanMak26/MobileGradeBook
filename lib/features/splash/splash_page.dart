@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../shared/theme/app_theme.dart';
-import '../auth/presentation/viewmodels/auth_viewmodel.dart';
+import '../auth/presentation/viewmodels/auth_viewmodel.dart'; // AuthStatus, authViewModelProvider
 
 class SplashPage extends ConsumerStatefulWidget {
   const SplashPage({super.key});
@@ -55,10 +55,18 @@ class _SplashPageState extends ConsumerState<SplashPage>
     await Future.delayed(const Duration(milliseconds: 400));
     _textCtrl.forward();
     _progressCtrl.forward();
-    await Future.delayed(const Duration(milliseconds: 2200));
+    await Future.delayed(const Duration(milliseconds: 1800));
+
+    // Wait for checkAuthStatus() (called in AuthViewModel constructor) to finish
+    while (mounted) {
+      final s = ref.read(authViewModelProvider).status;
+      if (s != AuthStatus.initial && s != AuthStatus.loading) break;
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
     if (mounted) {
-      final isAuth = ref.read(authViewModelProvider).isAuthenticated;
-      context.go(isAuth ? '/dashboard' : '/login');
+      // Router redirect handles: locked → /lock, unauthenticated → /login
+      context.go('/dashboard');
     }
   }
 

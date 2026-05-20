@@ -4,6 +4,15 @@ import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+const _androidChannel = AndroidNotificationChannel(
+  'gradebook_channel',
+  'GradeBook — сповіщення',
+  description: 'Сповіщення застосунку GradeBook ВІТІ',
+  importance: Importance.high,
+  playSound: true,
+  enableVibration: true,
+);
+
 class NotificationService {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
@@ -25,6 +34,16 @@ class NotificationService {
       const InitializationSettings(
           android: androidSettings, iOS: iosSettings),
     );
+
+    // Явно реєструємо канал на Android — FCM фонові нотифікації використовують
+    // цей канал і успадковують його налаштування (звук, вібрація)
+    if (Platform.isAndroid) {
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(_androidChannel);
+    }
+
     _initialized = true;
   }
 

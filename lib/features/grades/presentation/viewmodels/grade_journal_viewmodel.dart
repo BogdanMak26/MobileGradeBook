@@ -2,7 +2,6 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/local/local_cache.dart';
-import '../../../../core/local/offline_queue.dart';
 import '../../../../core/network/network_monitor.dart';
 import '../../data/models/grade_model.dart';
 import '../../data/models/lesson_model.dart';
@@ -50,10 +49,9 @@ class JournalState {
 class GradeJournalViewModel extends StateNotifier<JournalState> {
   final GradesRepository _repo;
   final LocalCache _cache;
-  final OfflineQueueNotifier _queue;
   final NetworkMonitor _network;
 
-  GradeJournalViewModel(this._repo, this._cache, this._queue, this._network)
+  GradeJournalViewModel(this._repo, this._cache, this._network)
       : super(const JournalState());
 
   // ── Журнал оцінок ─────────────────────────────────────────────────────────
@@ -63,10 +61,10 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     required int disciplineId,
     required int semesterId,
   }) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = const JournalState(isLoading: true);
 
     if (!_network.isOnline) {
-      state = state.copyWith(isLoading: false);
+      state = const JournalState();
       return;
     }
 
@@ -114,74 +112,6 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     }
   }
 
-  // ── Виставлення оцінки: офлайн → черга, онлайн → API ─────────────────────
-
-  Future<void> putGrade({
-    required int lessonId,
-    required int cadetId,
-    double? score,
-    String? status,
-  }) async {
-    state = state.copyWith(isSyncing: true, syncMessage: null);
-
-    if (!_network.isOnline) {
-      await _queue.enqueue(PendingOp(
-        id: '${DateTime.now().millisecondsSinceEpoch}_grade_${lessonId}_$cadetId',
-        method: 'PUT',
-        path: '/lessons/$lessonId/grades/$cadetId',
-        data: {
-          'score': score,
-          if (status != null) 'status': status,
-        },
-        createdAt: DateTime.now(),
-      ));
-      state = state.copyWith(
-        isSyncing: false,
-        syncMessage: 'В черзі (${_queue.state} операцій)',
-      );
-      return;
-    }
-
-    try {
-      await _repo.putGrade(
-          lessonId: lessonId, cadetId: cadetId, score: score, status: status);
-      state = state.copyWith(isSyncing: false, syncMessage: '✓ Збережено');
-    } catch (e) {
-      state = state.copyWith(
-          isSyncing: false, error: 'Помилка збереження: ${e.toString()}');
-    }
-  }
-
-  // ── Масове виставлення оцінок ─────────────────────────────────────────────
-
-  Future<void> batchGrades(List<Map<String, dynamic>> grades) async {
-    state = state.copyWith(isSyncing: true);
-
-    if (!_network.isOnline) {
-      for (final g in grades) {
-        await _queue.enqueue(PendingOp(
-          id: '${DateTime.now().millisecondsSinceEpoch}_grade_${g['lessonId']}_${g['cadetId']}',
-          method: 'PUT',
-          path: '/lessons/${g['lessonId']}/grades/${g['cadetId']}',
-          data: g,
-          createdAt: DateTime.now(),
-        ));
-      }
-      state = state.copyWith(
-        isSyncing: false,
-        syncMessage: 'В черзі (${_queue.state} операцій)',
-      );
-      return;
-    }
-
-    try {
-      await _repo.batchGrades(grades);
-      state = state.copyWith(isSyncing: false, syncMessage: '✓ Збережено');
-    } catch (e) {
-      state = state.copyWith(isSyncing: false, error: e.toString());
-    }
-  }
-
   // ── Заняття CRUD (тільки онлайн — структурні зміни) ──────────────────────
 
   Future<void> createLesson({
@@ -189,8 +119,7 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     required Map<String, dynamic> data,
   }) async {
     if (!_network.isOnline) {
-      state = state.copyWith(
-          error: "Немає з'єднання. Спробуйте при підключенні.");
+      state = state.copyWith(error: "Немає з'єднання. Спробуйте при підключенні.");
       return;
     }
     try {
@@ -209,16 +138,13 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     required Map<String, dynamic> data,
   }) async {
     if (!_network.isOnline) {
-      state = state.copyWith(
-          error: "Немає з'єднання. Спробуйте при підключенні.");
+      state = state.copyWith(error: "Немає з'єднання. Спробуйте при підключенні.");
       return;
     }
     try {
       final updated = await _repo.updateLesson(lessonId: lessonId, data: data);
       state = state.copyWith(
-        lessons: state.lessons
-            .map((l) => l.id == lessonId ? updated : l)
-            .toList(),
+        lessons: state.lessons.map((l) => l.id == lessonId ? updated : l).toList(),
         syncMessage: '✓ Заняття оновлено',
       );
     } catch (e) {
@@ -228,8 +154,7 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
 
   Future<void> deleteLesson(int lessonId) async {
     if (!_network.isOnline) {
-      state = state.copyWith(
-          error: "Немає з'єднання. Спробуйте при підключенні.");
+      state = state.copyWith(error: "Немає з'єднання. Спробуйте при підключенні.");
       return;
     }
     try {
@@ -251,7 +176,6 @@ final gradeJournalViewModelProvider =
   return GradeJournalViewModel(
     ref.read(gradesRepositoryProvider),
     ref.read(localCacheProvider),
-    ref.read(offlineQueueProvider.notifier),
     ref.read(networkMonitorProvider),
   );
 });

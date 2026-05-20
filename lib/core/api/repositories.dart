@@ -421,7 +421,7 @@ class RatesRepository {
     final r = await _client.dio.get('/rates', queryParameters: {
       'page': page,
       'size': size,
-      if (groupId != null) 'groupId': groupId,
+      if (groupId != null) 'groupIds': groupId,
       if (semesterId != null) 'semesterId': semesterId,
     });
     final raw = r.data;
@@ -430,9 +430,11 @@ class RatesRepository {
   }
 
   /// Рейтинг для конкретного курсанта.
-  Future<List<dynamic>> getCadetRates(int cadetId) async {
+  Future<Map<String, dynamic>> getCadetRates(int cadetId) async {
     final r = await _client.dio.get('/rates/cadets/$cadetId');
-    return r.data as List<dynamic>;
+    final raw = r.data;
+    if (raw is Map<String, dynamic>) return raw;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   /// Запустити перерахунок рейтингу (повертає кількість оновлених записів).
@@ -446,3 +448,143 @@ class RatesRepository {
 
 final ratesRepositoryProvider = Provider<RatesRepository>(
     (ref) => RatesRepository(ref.read(apiClientProvider)));
+
+// ── Schedule Repository ───────────────────────────────────────────────────────
+
+Map<String, dynamic> _normalizeScheduleResponse(dynamic raw, String url) {
+  print('[Schedule] raw response type: ${raw.runtimeType} from $url');
+
+  if (raw is List) {
+    return {'lessons': raw};
+  }
+  if (raw is Map<String, dynamic>) {
+    final lessons = <dynamic>[
+      if (raw['lessons'] is List) ...raw['lessons'] as List,
+      if (raw['courseLessons'] is List) ...raw['courseLessons'] as List,
+      if (raw['scheduleEvents'] is List) ...raw['scheduleEvents'] as List,
+      if (raw['events'] is List) ...raw['events'] as List,
+      if (raw['courseEvents'] is List) ...raw['courseEvents'] as List,
+    ];
+    if (lessons.isNotEmpty) {
+      return {'lessons': lessons};
+    }
+    for (final key in ['data', 'content', 'schedules', 'items']) {
+      if (raw.containsKey(key) && raw[key] is List) {
+        print('[Schedule] found lessons under key "$key"');
+        return {'lessons': raw[key]};
+      }
+    }
+    print('[Schedule] no lessons key found, keys: ${raw.keys.toList()}');
+    return raw;
+  }
+  print('[Schedule] unexpected response type from $url');
+  return {};
+}
+
+class ScheduleRepository {
+  final ApiClient _client;
+  ScheduleRepository(this._client);
+
+  // Nginx strips the leading /api/ prefix before Spring Boot, so Flutter must include
+  // an extra /api/ so that after stripping the correct /api/proxy/schedule/** path remains.
+  static const _scheduleBase = '/api/proxy/schedule/api/schedule';
+
+  Future<Map<String, dynamic>> getGroupSchedule({
+    required String groupNumber,
+    required String startDate,
+    required String endDate,
+  }) async {
+    try {
+      final r = await _client.dio.post(
+        '$_scheduleBase/group-in-courses',
+        data: {'groupNumber': groupNumber, 'startDate': startDate, 'endDate': endDate},
+      );
+      return _normalizeScheduleResponse(r.data, 'group-in-courses');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 400) {
+        print('[Schedule] group-in-courses → 400, fallback to /group');
+        final r2 = await _client.dio.post(
+          '$_scheduleBase/group',
+          data: {'groupNumber': groupNumber, 'startDate': startDate, 'endDate': endDate},
+        );
+        return _normalizeScheduleResponse(r2.data, 'group');
+      }
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getDepartmentSchedule({
+    required int departmentNumber,
+    required String startDate,
+    required String endDate,
+  }) async {
+    final r = await _client.dio.post(
+      '$_scheduleBase/department/with-course-lessons',
+      data: {'departmentNumber': departmentNumber, 'startDate': startDate, 'endDate': endDate},
+    );
+    return _normalizeScheduleResponse(r.data, 'department/with-course-lessons');
+  }
+
+  Future<Map<String, dynamic>> getCourseSchedule({
+    required int courseNumber,
+    required String startDate,
+    required String endDate,
+  }) async {
+    try {
+      final r = await _client.dio.post(
+        '$_scheduleBase/course/with-events',
+        data: {'courseNumber': courseNumber, 'startDate': startDate, 'endDate': endDate},
+      );
+      return _normalizeScheduleResponse(r.data, 'course/with-events');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 400) {
+        print('[Schedule] course/with-events → 400, fallback to /course');
+        final r2 = await _client.dio.post(
+          '$_scheduleBase/course',
+          data: {'courseNumber': courseNumber, 'startDate': startDate, 'endDate': endDate},
+        );
+        return _normalizeScheduleResponse(r2.data, 'course');
+      }
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getFacultySchedule({
+    required int facultyNumber,
+    required String startDate,
+    required String endDate,
+  }) async {
+    try {
+      final r = await _client.dio.post(
+        '$_scheduleBase/faculty/with-events',
+        data: {'facultyNumber': facultyNumber, 'startDate': startDate, 'endDate': endDate},
+      );
+      return _normalizeScheduleResponse(r.data, 'faculty/with-events');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 400) {
+        print('[Schedule] faculty/with-events → 400, fallback to /faculty');
+        final r2 = await _client.dio.post(
+          '$_scheduleBase/faculty',
+          data: {'facultyNumber': facultyNumber, 'startDate': startDate, 'endDate': endDate},
+        );
+        return _normalizeScheduleResponse(r2.data, 'faculty');
+      }
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getLocationSchedule({
+    required int locationNumber,
+    required String startDate,
+    required String endDate,
+  }) async {
+    final r = await _client.dio.post(
+      '$_scheduleBase/location',
+      data: {'locationNumber': locationNumber, 'startDate': startDate, 'endDate': endDate},
+    );
+    return _normalizeScheduleResponse(r.data, 'location');
+  }
+}
+
+final scheduleRepositoryProvider = Provider<ScheduleRepository>(
+    (ref) => ScheduleRepository(ref.read(apiClientProvider)));

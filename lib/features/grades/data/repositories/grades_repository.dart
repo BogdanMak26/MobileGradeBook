@@ -31,18 +31,30 @@ class GradesRepository {
         .toList();
   }
 
+  // ── Список журналів дисципліни ────────────────────────────────────────────
+  // GET /journals?discipline_id={id}  (server uses snake_case params)
+  Future<List<dynamic>> getDisciplineJournals(int disciplineId) async {
+    final response = await _client.dio.get(
+      '/journals',
+      queryParameters: {'discipline_id': disciplineId},
+    );
+    return response.data as List<dynamic>;
+  }
+
+  // ── CRUD занять ───────────────────────────────────────────────────────────
+
   Future<LessonModel> createLesson({
     required int journalId,
     required Map<String, dynamic> data,
   }) async {
+    // POST /lessons (not /journals/{id}/lessons)
     final response = await _client.dio.post(
-      '/journals/$journalId/lessons',
-      data: data,
+      '/lessons',
+      data: {'journalId': journalId, ...data},
     );
     return LessonModel.fromJson(response.data as Map<String, dynamic>);
   }
 
-  // PATCH /lessons/{lessonId} (не PUT)
   Future<LessonModel> updateLesson({
     required int lessonId,
     required Map<String, dynamic> data,
@@ -55,47 +67,61 @@ class GradesRepository {
     await _client.dio.delete('/lessons/$lessonId');
   }
 
-  // ── Підзаняття (стовпці оцінювання всередині заняття) ────────────────────
+  // ── Оцінки (POST /marks, PATCH /marks/{id}) ───────────────────────────────
 
-  Future<List<dynamic>> getSublessons(int lessonId) async {
-    final response = await _client.dio.get('/lessons/$lessonId/sublessons');
-    return response.data as List<dynamic>;
-  }
-
-  Future<Map<String, dynamic>> createSublesson(
-      int lessonId, Map<String, dynamic> data) async {
-    final response =
-        await _client.dio.post('/lessons/$lessonId/sublessons', data: data);
+  // Creates a new mark. Returns the created mark ID.
+  Future<Map<String, dynamic>> createMark({
+    required int cadetId,
+    required int subLessonId,
+    required int teacherId,
+    required double value,
+    String type = 'ПОТОЧНА',
+  }) async {
+    final response = await _client.dio.post('/marks', data: {
+      'cadetId': cadetId,
+      'subLessonId': subLessonId,
+      'teacherId': teacherId,
+      'value': value,
+      'type': type,
+    });
     return response.data as Map<String, dynamic>;
   }
 
-  // ── Оцінка (одиночна) ────────────────────────────────────────────────────
-
-  Future<GradeModel> putGrade({
-    required int lessonId,
-    required int cadetId,
-    double? score,
-    String? status, // 'Н' — відсутній, 'ІЗ' — індивідуальне завдання
-  }) async {
-    final response = await _client.dio.put(
-      '/lessons/$lessonId/grades/$cadetId',
-      data: {
-        'score': score,
-        if (status != null) 'status': status,
-      },
-    );
-    return GradeModel.fromJson(response.data as Map<String, dynamic>);
+  // Updates an existing mark by markId.
+  Future<void> updateMark(int markId, double value, [String type = 'ПОТОЧНА']) async {
+    await _client.dio.patch('/marks/$markId', data: {
+      'markValue': value,
+      'markType': type,
+    });
   }
 
-  // ── Масове виставлення оцінок (весь рядок журналу) ───────────────────────
+  Future<void> deleteMark(int markId) async {
+    await _client.dio.delete('/marks/$markId');
+  }
 
-  Future<List<GradeModel>> batchGrades(
-      List<Map<String, dynamic>> grades) async {
-    final response = await _client.dio.post('/grades/batch', data: grades);
-    final list = response.data as List<dynamic>;
-    return list
-        .map((e) => GradeModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+  // ── Відвідуваність (POST /attends, PATCH /attends/{id}) ──────────────────
+
+  Future<Map<String, dynamic>> createAttend({
+    required int cadetId,
+    required int lessonId,
+    required int teacherId,
+    required String attended,
+  }) async {
+    final response = await _client.dio.post('/attends', data: {
+      'cadetId': cadetId,
+      'lessonId': lessonId,
+      'teacherId': teacherId,
+      'attended': attended,
+    });
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<void> updateAttend(int attendId, String attended) async {
+    await _client.dio.patch('/attends/$attendId', data: {'attended': attended});
+  }
+
+  Future<void> deleteAttend(int attendId) async {
+    await _client.dio.delete('/attends/$attendId');
   }
 }
 

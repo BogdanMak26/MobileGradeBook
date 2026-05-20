@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/mock/mock_data.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
+import '../../../disciplines/presentation/viewmodels/disciplines_viewmodel.dart';
+import '../../../grades/presentation/viewmodels/cadet_grades_viewmodel.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -72,9 +73,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     final role = authState.role ?? '';
     final isCadet = role == UserRole.cadet;
     final isAdmin = role == UserRole.superAdmin;
-    final user = isCadet
-        ? MockDataProvider.cadetUser
-        : MockDataProvider.currentUser;
+    final fullName = authState.fullName ?? '';
 
     return Scaffold(
       appBar: AppBar(
@@ -98,7 +97,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
             child: Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                _AvatarChip(name: user.fullName),
+                _AvatarChip(name: fullName),
                 const SizedBox(width: 4),
                 const Icon(Icons.keyboard_arrow_down,
                     color: AppTheme.textMid, size: 18),
@@ -108,10 +107,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         ],
       ),
       body: isCadet
-          ? _CadetDashboard(user: user, animated: _animated)
+          ? _CadetDashboard(fullName: fullName, animated: _animated)
           : isAdmin
-              ? _AdminDashboard(user: user, animated: _animated)
-              : _InstructorDashboard(user: user, animated: _animated),
+              ? _AdminDashboard(fullName: fullName, animated: _animated)
+              : _InstructorDashboard(fullName: fullName, animated: _animated),
     );
   }
 }
@@ -162,22 +161,32 @@ class _AvatarChip extends StatelessWidget {
 
 // ── Курсант ───────────────────────────────────────────────────────────────────
 
-class _CadetDashboard extends StatelessWidget {
-  final MockUser user;
+class _CadetDashboard extends ConsumerWidget {
+  final String fullName;
   final Widget Function(int, Widget) animated;
-  const _CadetDashboard({required this.user, required this.animated});
+  const _CadetDashboard({required this.fullName, required this.animated});
 
   @override
-  Widget build(BuildContext context) {
-    final grades = MockDataProvider.cadetGrades;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gradesVm = ref.watch(cadetGradesViewModelProvider);
+    final grades = gradesVm.grades;
     final scored = grades.where((g) => g['score'] != null).toList();
     final avg = scored.isEmpty
         ? 0.0
-        : scored.map((g) => g['score'] as int).reduce((a, b) => a + b) /
+        : scored.map((g) => (g['score'] as num).toDouble()).reduce((a, b) => a + b) /
             scored.length;
-    final total = grades.length;
-    final present = grades.where((g) => g['status'] == 'present').length;
-    final attendancePct = total == 0 ? 0 : (present / total * 100).round();
+    final attendanceValues = grades
+        .map((g) => (g['attendancePercentage'] as num?)?.toDouble())
+        .where((v) => v != null)
+        .cast<double>()
+        .toList();
+    final attendancePct = attendanceValues.isEmpty
+        ? 0
+        : (attendanceValues.reduce((a, b) => a + b) / attendanceValues.length).round();
+
+    final firstName = fullName.trim().split(' ').length > 1
+        ? fullName.trim().split(' ').last
+        : fullName;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -185,27 +194,30 @@ class _CadetDashboard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           animated(0, _WelcomeBanner(
-              name: user.fullName.split(' ').first,
+              name: firstName,
               role: 'Курсант',
               sub: 'Час для нових звершень!')),
           const SizedBox(height: 16),
-          animated(1, Row(children: [
-            Expanded(child: _StatCard(
-                label: 'Середній бал',
-                value: avg > 0 ? avg.toStringAsFixed(1) : '—',
-                icon: Icons.star_rounded,
-                color: AppTheme.primary,
-                progress: avg / 100)),
-            const SizedBox(width: 12),
-            Expanded(child: _StatCard(
-                label: 'Відвідуваність',
-                value: '$attendancePct%',
-                icon: Icons.check_circle_rounded,
-                color: const Color(0xFF059669),
-                progress: attendancePct / 100)),
-          ])),
+          if (gradesVm.isLoading)
+            animated(1, const Center(child: CircularProgressIndicator()))
+          else
+            animated(1, Row(children: [
+              Expanded(child: _StatCard(
+                  label: 'Рейтинг',
+                  value: avg > 0 ? '${avg.toStringAsFixed(1)}%' : '—',
+                  icon: Icons.star_rounded,
+                  color: AppTheme.primary,
+                  progress: avg / 100)),
+              const SizedBox(width: 12),
+              Expanded(child: _StatCard(
+                  label: 'Відвідуваність',
+                  value: '$attendancePct%',
+                  icon: Icons.check_circle_rounded,
+                  color: const Color(0xFF059669),
+                  progress: attendancePct / 100)),
+            ])),
           const SizedBox(height: 16),
-          animated(2, _QuickActions(isCadet: true)),
+          animated(2, const _QuickActions(isCadet: true)),
         ],
       ),
     );
@@ -214,31 +226,40 @@ class _CadetDashboard extends StatelessWidget {
 
 // ── Викладач ──────────────────────────────────────────────────────────────────
 
-class _InstructorDashboard extends StatelessWidget {
-  final MockUser user;
+class _InstructorDashboard extends ConsumerWidget {
+  final String fullName;
   final Widget Function(int, Widget) animated;
-  const _InstructorDashboard({required this.user, required this.animated});
+  const _InstructorDashboard({required this.fullName, required this.animated});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final disciplinesVm = ref.watch(disciplinesViewModelProvider);
+    final count = disciplinesVm.isLoading
+        ? '...'
+        : '${disciplinesVm.disciplines.length}';
+
+    final firstName = fullName.trim().split(' ').length > 1
+        ? fullName.trim().split(' ').last
+        : fullName;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           animated(0, _WelcomeBanner(
-              name: user.fullName.split(' ').first,
+              name: firstName,
               role: 'Викладач',
               sub: 'Продуктивного дня!')),
           const SizedBox(height: 16),
           animated(1, _StatCard(
               label: 'Всього дисциплін',
-              value: '${MockDataProvider.disciplines.length}',
+              value: count,
               icon: Icons.school_rounded,
               color: AppTheme.secondary,
               wide: true)),
           const SizedBox(height: 16),
-          animated(2, _QuickActions(isCadet: false)),
+          animated(2, const _QuickActions(isCadet: false)),
         ],
       ),
     );
@@ -247,31 +268,36 @@ class _InstructorDashboard extends StatelessWidget {
 
 // ── Адмін ─────────────────────────────────────────────────────────────────────
 
-class _AdminDashboard extends StatelessWidget {
-  final MockUser user;
+class _AdminDashboard extends ConsumerWidget {
+  final String fullName;
   final Widget Function(int, Widget) animated;
-  const _AdminDashboard({required this.user, required this.animated});
+  const _AdminDashboard({required this.fullName, required this.animated});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final disciplinesVm = ref.watch(disciplinesViewModelProvider);
+    final count = disciplinesVm.isLoading
+        ? '...'
+        : '${disciplinesVm.disciplines.length}';
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          animated(0, _WelcomeBanner(
+          animated(0, const _WelcomeBanner(
               name: 'Адміне',
               role: 'Суперадмін',
               sub: 'Все під контролем!')),
           const SizedBox(height: 16),
           animated(1, _StatCard(
               label: 'Всього дисциплін',
-              value: '${MockDataProvider.disciplines.length}',
+              value: count,
               icon: Icons.school_rounded,
               color: AppTheme.secondary,
               wide: true)),
           const SizedBox(height: 16),
-          animated(2, _QuickActions(isCadet: false, isAdmin: true)),
+          animated(2, const _QuickActions(isCadet: false, isAdmin: true)),
         ],
       ),
     );
@@ -439,18 +465,24 @@ class _StatCard extends StatelessWidget {
 
 // ── Quick Actions ─────────────────────────────────────────────────────────────
 
-class _QuickActions extends StatelessWidget {
+class _QuickActions extends ConsumerWidget {
   final bool isCadet;
   final bool isAdmin;
   const _QuickActions({required this.isCadet, this.isAdmin = false});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final disciplinesVm = ref.watch(disciplinesViewModelProvider);
+    final discCount = disciplinesVm.disciplines.length;
     final items = <_ActionItem>[
       _ActionItem(
           icon: Icons.menu_book_rounded,
           label: 'Дисципліни',
-          sub: isCadet ? 'Мої дисципліни' : '${MockDataProvider.disciplines.length} дисциплін',
+          sub: isCadet
+              ? 'Мої дисципліни'
+              : discCount > 0
+                  ? '$discCount дисциплін'
+                  : 'Дисципліни',
           color: AppTheme.secondary,
           gradientColors: const [Color(0xFF4F46E5), Color(0xFF7C3AED)],
           onTap: () => context.go('/disciplines')),
