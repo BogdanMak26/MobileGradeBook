@@ -7,6 +7,35 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../viewmodels/grade_journal_viewmodel.dart';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+String _lessonTypeKey(String type) {
+  switch (type.toUpperCase()) {
+    case 'LECTURE':           return 'ЛЕКЦІЯ';
+    case 'GROUP_WORK':        return 'ГРУПОВЕ ЗАНЯТТЯ';
+    case 'PRACTICAL_WORK':    return 'ПРАКТИЧНЕ ЗАНЯТТЯ';
+    case 'LAB_WORK':          return 'ЛАБОРАТОРНА';
+    default:                  return type.toUpperCase();
+  }
+}
+
+String _lessonTypeLabel(String type) {
+  switch (_lessonTypeKey(type)) {
+    case 'ЛЕКЦІЯ':             return 'Лекція';
+    case 'ГРУПОВЕ ЗАНЯТТЯ':    return 'Групове';
+    case 'ПРАКТИЧНЕ ЗАНЯТТЯ':  return 'Практичне';
+    case 'ЛАБОРАТОРНА':        return 'Лабораторна';
+    default:                   return type;
+  }
+}
+
+// "2026-01-07" → "07.01.26"
+String _fmtDate(String iso) {
+  final p = iso.split('-');
+  if (p.length != 3) return iso;
+  return '${p[2]}.${p[1]}.${p[0].substring(2)}';
+}
+
 // Attendance options matching the reference app
 const _attOptions = [
   {'code': 'П',  'label': 'Присутній',              'hint': ''},
@@ -103,8 +132,16 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<JournalState>(gradeJournalViewModelProvider, (_, next) {
+    ref.listen<JournalState>(gradeJournalViewModelProvider, (prev, next) {
       if (!next.isLoading && next.journal != null && !_dataFromApi) _loadFromJournal(next);
+      if (next.syncMessage != null && next.syncMessage != prev?.syncMessage) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.syncMessage!), duration: const Duration(seconds: 2)));
+      }
+      if (next.error != null && next.error != prev?.error && _dataFromApi) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.error!), backgroundColor: Colors.red));
+      }
     });
 
     final journalVm = ref.watch(gradeJournalViewModelProvider);
@@ -145,10 +182,33 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 20),
-            onPressed: () {},
+            onPressed: () {
+              if (widget.groupId != null) {
+                _dataFromApi = false;
+                ref.read(gradeJournalViewModelProvider.notifier).loadJournal(
+                  groupId: widget.groupId!,
+                  disciplineId: int.tryParse(widget.disciplineId) ?? 0,
+                  semesterId: int.tryParse(widget.semesterId ?? '') ?? 0,
+                );
+              }
+            },
             tooltip: 'Оновити',
             padding: const EdgeInsets.all(8),
           ),
+          if (canEdit)
+            IconButton(
+              icon: const Icon(Icons.save_outlined, size: 20),
+              tooltip: 'Зберегти відвідуваність',
+              padding: const EdgeInsets.all(8),
+              onPressed: () {
+                final authState = ref.read(authViewModelProvider);
+                final teacherId = int.tryParse(authState.userId ?? '') ?? 0;
+                ref.read(gradeJournalViewModelProvider.notifier).saveAttendances(
+                  attendance: _attendance,
+                  teacherId: teacherId,
+                );
+              },
+            ),
           if (!widget.readOnly)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert_rounded, size: 22),
@@ -204,13 +264,13 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                 child: TabBarView(
                   controller: _tab,
                   children: [
-                    journalVm.isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : journalVm.error != null && !_dataFromApi
-                            ? Center(child: Text(journalVm.error!, style: const TextStyle(color: Colors.red)))
-                            : !_dataFromApi && _lessons.isEmpty
-                                ? const Center(child: Text('Немає даних', style: TextStyle(color: AppTheme.textMid)))
-                                : _GradesTab(
+                    journalVm.error != null && !_dataFromApi
+                        ? Center(child: Text(journalVm.error!, style: const TextStyle(color: Colors.red)))
+                        : !_dataFromApi && _lessons.isEmpty
+                            ? journalVm.isLoading
+                                ? const SizedBox.shrink()
+                                : const Center(child: Text('Немає даних', style: TextStyle(color: AppTheme.textMid)))
+                            : _GradesTab(
                                     lessons: _lessons,
                                     maxTotalScore: _maxTotalScore,
                                     scores: _scores,
@@ -463,13 +523,14 @@ class _GradesTabState extends State<_GradesTab> {
   bool _syncing = false;
 
   // Layout constants
-  static const double _attW   = 36.0;  // attendance sub-column
-  static const double _scoreW = 46.0;  // score sub-column
-  static const double _headH  = 36.0;  // lesson code header row
-  static const double _dateH  = 22.0;  // date row
-  static const double _subH   = 18.0;  // sub-label row (Пр | Бал)
-  static const double _rowH   = 42.0;  // data row
-  static const double _fixedW = 160.0;
+  static const double _attW    = 36.0;  // attendance sub-column
+  static const double _scoreW  = 46.0;  // score sub-column
+  static const double _headH   = 36.0;  // lesson code header row
+  static const double _dateH   = 22.0;  // date row
+  static const double _subH    = 18.0;  // sub-label row (Пр | Бал)
+  static const double _rowH    = 42.0;  // data row
+  static const double _footerH = 28.0;  // max-score footer row
+  static const double _fixedW  = 160.0;
 
   double _lessonW(Map<String, dynamic> l) =>
       (l['maxScore'] as double?) != null ? _attW + _scoreW : _attW;
@@ -538,7 +599,7 @@ class _GradesTabState extends State<_GradesTab> {
   // ── Lesson type colours (for header chip) ─────────────────────────────────
 
   Color _lessonBg(Map<String, dynamic> l) {
-    switch (l['type'] as String) {
+    switch (_lessonTypeKey(l['type'] as String)) {
       case 'ЛЕКЦІЯ':            return const Color(0xFFDBEAFE);
       case 'ГРУПОВЕ ЗАНЯТТЯ':   return const Color(0xFFDCFCE7);
       case 'ПРАКТИЧНЕ ЗАНЯТТЯ': return const Color(0xFFFEF3C7);
@@ -547,7 +608,7 @@ class _GradesTabState extends State<_GradesTab> {
   }
 
   Color _lessonFg(Map<String, dynamic> l) {
-    switch (l['type'] as String) {
+    switch (_lessonTypeKey(l['type'] as String)) {
       case 'ЛЕКЦІЯ':            return const Color(0xFF1D4ED8);
       case 'ГРУПОВЕ ЗАНЯТТЯ':   return const Color(0xFF15803D);
       case 'ПРАКТИЧНЕ ЗАНЯТТЯ': return const Color(0xFFB45309);
@@ -838,6 +899,28 @@ class _GradesTabState extends State<_GradesTab> {
                     },
                   ),
                 ),
+                // ── Max score footer (left) ────────────────────────────────
+                Container(
+                  height: _footerH,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
+                    border: Border(
+                      top:   BorderSide(color: Color(0xFFE2E8F0), width: 2),
+                      right: BorderSide(color: Color(0xFFE2E8F0), width: 2),
+                    ),
+                  ),
+                  child: const Row(children: [
+                    SizedBox(width: 28),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Text('Макс. бал',
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textMid)),
+                      ),
+                    ),
+                    SizedBox(width: 52),
+                  ]),
+                ),
               ]),
             ),
 
@@ -871,7 +954,7 @@ class _GradesTabState extends State<_GradesTab> {
                               ),
                             ),
                             child: Center(
-                              child: Text(l['date'] as String,
+                              child: Text(_fmtDate(l['date'] as String),
                                   style: const TextStyle(fontSize: 9, color: AppTheme.textMid)),
                             ),
                           );
@@ -935,7 +1018,7 @@ class _GradesTabState extends State<_GradesTab> {
                         physics: const ClampingScrollPhysics(),
                         itemCount: cadets.length,
                         itemExtent: _rowH,
-                        itemBuilder: (ctx, i) {
+                        itemBuilder: (_, i) {
                           final name = cadets[i];
                           final cadetScores = widget.scores[name]!;
                           final cadetAtt    = widget.attendance[name]!;
@@ -1027,6 +1110,46 @@ class _GradesTabState extends State<_GradesTab> {
                         },
                       ),
                     ),
+                    // ── Max score footer (right) ───────────────────────────
+                    SizedBox(
+                      height: _footerH,
+                      child: Row(
+                        children: lessons.map((l) {
+                          final maxScore = l['maxScore'] as double?;
+                          final hasScore = maxScore != null;
+                          final bg = _lessonBg(l).withOpacity(0.3);
+                          final fg = _lessonFg(l);
+                          const topBorder = Border(
+                            top:   BorderSide(color: Color(0xFFE2E8F0), width: 2),
+                            right: BorderSide(color: Color(0xFFE2E8F0)),
+                          );
+
+                          final attCell = Container(
+                            width: _attW,
+                            decoration: BoxDecoration(color: bg, border: topBorder),
+                          );
+
+                          if (!hasScore) return attCell;
+
+                          final label = maxScore == maxScore.truncateToDouble()
+                              ? maxScore.toInt().toString()
+                              : maxScore.toStringAsFixed(1);
+
+                          return Row(children: [
+                            attCell,
+                            Container(
+                              width: _scoreW,
+                              decoration: BoxDecoration(color: bg, border: topBorder),
+                              child: Center(
+                                child: Text(label,
+                                    style: TextStyle(
+                                        fontSize: 10, fontWeight: FontWeight.w700, color: fg)),
+                              ),
+                            ),
+                          ]);
+                        }).toList(),
+                      ),
+                    ),
                   ]),
                 ),
               ),
@@ -1106,92 +1229,157 @@ class _LessonsTab extends StatelessWidget {
   final VoidCallback onAdd;
   const _LessonsTab({required this.lessons, required this.onAdd});
 
-  Color _typeColor(String type) {
-    switch (type) {
-      case 'ЛЕКЦІЯ':            return const Color(0xFF93C5FD);
-      case 'ГРУПОВЕ ЗАНЯТТЯ':   return const Color(0xFF86EFAC);
-      case 'ПРАКТИЧНЕ ЗАНЯТТЯ': return const Color(0xFFFDE68A);
-      default:                  return AppTheme.border;
+  Color _typeBg(String type) {
+    switch (_lessonTypeKey(type)) {
+      case 'ЛЕКЦІЯ':            return const Color(0xFFDBEAFE);
+      case 'ГРУПОВЕ ЗАНЯТТЯ':   return const Color(0xFFDCFCE7);
+      case 'ПРАКТИЧНЕ ЗАНЯТТЯ': return const Color(0xFFFEF3C7);
+      default:                  return AppTheme.surface;
+    }
+  }
+
+  Color _typeFg(String type) {
+    switch (_lessonTypeKey(type)) {
+      case 'ЛЕКЦІЯ':            return const Color(0xFF1D4ED8);
+      case 'ГРУПОВЕ ЗАНЯТТЯ':   return const Color(0xFF15803D);
+      case 'ПРАКТИЧНЕ ЗАНЯТТЯ': return const Color(0xFFB45309);
+      default:                  return AppTheme.textMid;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return ListView.builder(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            const Text('Заняття',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textDark)),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                  color: AppTheme.surface, borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppTheme.border)),
-              child: Text('Всього: ${lessons.length}',
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
-            ),
-          ]),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            color: AppTheme.surface,
-            child: const Row(children: [
-              SizedBox(width: 90, child: Text('Дата', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid))),
-              SizedBox(width: 90, child: Text('Тип',  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid))),
-              SizedBox(width: 50, child: Text('Назва',style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid))),
-              Expanded(child: Text('Тема заняття',   style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid))),
-              SizedBox(width: 50, child: Text('Макс.бал', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMid))),
-              SizedBox(width: 30),
+      itemCount: lessons.length + 1,
+      itemBuilder: (_, i) {
+        if (i == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(children: [
+              const Text('Заняття',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textDark)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                    color: AppTheme.surface, borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppTheme.border)),
+                child: Text('Всього: ${lessons.length}',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
+              ),
             ]),
-          ),
-          const Divider(height: 1),
-          ...lessons.map((l) => Column(children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(children: [
-                SizedBox(width: 90, child: Text(l['date'] as String,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textDark))),
-                SizedBox(
-                  width: 90,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(color: _typeColor(l['type'] as String), borderRadius: BorderRadius.circular(4)),
-                    child: Text(l['type'] as String, textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w600)),
-                  ),
+          );
+        }
+
+        final l = lessons[i - 1];
+        final type = l['type'] as String;
+        final date = _fmtDate(l['date'] as String);
+        final code = l['code'] as String;
+        final topic = l['topic'] as String;
+        final maxScore = l['maxScore'] as double?;
+        final bg  = _typeBg(type);
+        final fg  = _typeFg(type);
+        final lbl = _lessonTypeLabel(type);
+        final scoreText = (maxScore != null && maxScore > 0)
+            ? '${maxScore == maxScore.truncateToDouble() ? maxScore.toInt() : maxScore} б.'
+            : '—';
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(width: 4, color: fg),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: bg,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(lbl,
+                                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: fg)),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(code,
+                                          style: const TextStyle(
+                                              fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textDark),
+                                          overflow: TextOverflow.ellipsis),
+                                    ),
+                                  ]),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    topic.isNotEmpty ? topic : '—',
+                                    style: const TextStyle(fontSize: 12, color: AppTheme.textDark, height: 1.4),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(date,
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textLight)),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(scoreText,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: (maxScore != null && maxScore > 0)
+                                              ? AppTheme.primary
+                                              : AppTheme.textLight,
+                                        )),
+                                    const SizedBox(width: 6),
+                                    GestureDetector(
+                                      onTap: () {},
+                                      child: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textLight),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(width: 50, child: Text(l['code'] as String,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textDark))),
-                Expanded(child: Text(l['topic'] as String,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textDark),
-                    overflow: TextOverflow.ellipsis)),
-                SizedBox(
-                  width: 50,
-                  child: Text(
-                    l['maxScore'] != null ? '${l['maxScore']} б.' : '—',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textMid),
-                  ),
-                ),
-                SizedBox(
-                  width: 30,
-                  child: IconButton(
-                    icon: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.primary),
-                    onPressed: () {},
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ),
-              ]),
+              ),
             ),
-            const Divider(height: 1),
-          ])),
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 }

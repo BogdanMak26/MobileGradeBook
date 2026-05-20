@@ -110,7 +110,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
           ? _CadetDashboard(fullName: fullName, animated: _animated)
           : isAdmin
               ? _AdminDashboard(fullName: fullName, animated: _animated)
-              : _InstructorDashboard(fullName: fullName, animated: _animated),
+              : _InstructorDashboard(fullName: fullName, role: role, animated: _animated),
     );
   }
 }
@@ -224,12 +224,13 @@ class _CadetDashboard extends ConsumerWidget {
   }
 }
 
-// ── Викладач ──────────────────────────────────────────────────────────────────
+// ── Викладач / Нач. кафедри ───────────────────────────────────────────────────
 
 class _InstructorDashboard extends ConsumerWidget {
   final String fullName;
+  final String role;
   final Widget Function(int, Widget) animated;
-  const _InstructorDashboard({required this.fullName, required this.animated});
+  const _InstructorDashboard({required this.fullName, required this.role, required this.animated});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -242,6 +243,8 @@ class _InstructorDashboard extends ConsumerWidget {
         ? fullName.trim().split(' ').last
         : fullName;
 
+    final isDeptHead = role == UserRole.departmentHead;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       child: Column(
@@ -249,8 +252,8 @@ class _InstructorDashboard extends ConsumerWidget {
         children: [
           animated(0, _WelcomeBanner(
               name: firstName,
-              role: 'Викладач',
-              sub: 'Продуктивного дня!')),
+              role: isDeptHead ? 'Нач. кафедри' : 'Викладач',
+              sub: isDeptHead ? 'Управляйте ефективно!' : 'Продуктивного дня!')),
           const SizedBox(height: 16),
           animated(1, _StatCard(
               label: 'Всього дисциплін',
@@ -280,13 +283,17 @@ class _AdminDashboard extends ConsumerWidget {
         ? '...'
         : '${disciplinesVm.disciplines.length}';
 
+    final firstName = fullName.trim().split(' ').length > 1
+        ? fullName.trim().split(' ').last
+        : fullName;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          animated(0, const _WelcomeBanner(
-              name: 'Адміне',
+          animated(0, _WelcomeBanner(
+              name: firstName.isEmpty ? 'Адміне' : firstName,
               role: 'Суперадмін',
               sub: 'Все під контролем!')),
           const SizedBox(height: 16),

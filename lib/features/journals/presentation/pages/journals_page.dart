@@ -3,9 +3,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/repositories.dart';
+import '../../../../features/disciplines/data/models/discipline_model.dart';
 import '../../../../features/disciplines/data/repositories/disciplines_repository.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/add_discipline_sheet.dart';
+import '../../../../shared/widgets/create_journal_dialog.dart';
 import '../../../grades/presentation/pages/grade_journal_page.dart';
 
 
@@ -137,11 +139,12 @@ class _KafedrasTabState extends ConsumerState<_KafedrasTab> {
         final k = _kafedras[i];
         final kafedraId = k['id'] as int?;
         final name = k['name']?.toString() ?? '—';
-        final desc = k['description']?.toString() ?? k['desc']?.toString() ?? '';
+        final number = k['number'] ?? k['kafedraNumber'];
+        final subtitle = number != null ? 'Кафедра №$number' : '';
         return _CardTile(
           icon: Icons.school,
           title: name,
-          subtitle: desc,
+          subtitle: subtitle,
           onTap: () {
             if (kafedraId == null) return;
             Navigator.push(
@@ -928,7 +931,7 @@ class _KafedraDisciplinesPage extends ConsumerStatefulWidget {
 class _KafedraDisciplinesPageState
     extends ConsumerState<_KafedraDisciplinesPage> {
   String _search = '';
-  List<Map<String, dynamic>> _disciplines = [];
+  List<DisciplineModel> _disciplines = [];
   bool _isLoading = true;
   String? _error;
 
@@ -943,9 +946,11 @@ class _KafedraDisciplinesPageState
     try {
       final raw = await ref
           .read(disciplinesRepositoryProvider)
-          .getAllDisciplines(kafedraId: widget.kafedraId);
+          .getAllDisciplines();
       setState(() {
-        _disciplines = raw.map((e) => e as Map<String, dynamic>).toList();
+        _disciplines = raw
+            .where((d) => d.kafedraId == widget.kafedraId)
+            .toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -970,8 +975,8 @@ class _KafedraDisciplinesPageState
 
     final filtered = _disciplines
         .where((d) =>
-            (d['fullName'] ?? d['name'] ?? '').toString().toLowerCase().contains(_search.toLowerCase()) ||
-            (d['shortName'] ?? d['short'] ?? '').toString().toLowerCase().contains(_search.toLowerCase()))
+            d.fullName.toLowerCase().contains(_search.toLowerCase()) ||
+            (d.shortName ?? '').toLowerCase().contains(_search.toLowerCase()))
         .toList();
 
     return Scaffold(
@@ -1022,27 +1027,29 @@ class _KafedraDisciplinesPageState
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               itemCount: filtered.length + 1,
               itemBuilder: (context, i) {
-                if (i == filtered.length) return const _AddDisciplineCard();
+                if (i == filtered.length) return _AddDisciplineCard(
+                  onTap: () => showAddDisciplineSheet(
+                    context,
+                    kafedraId: widget.kafedraId,
+                    onCreated: _load,
+                  ),
+                );
                 final d = filtered[i];
-                final discId = d['id'] as int?;
-                final discName = d['fullName']?.toString() ?? d['name']?.toString() ?? '—';
-                final discShort = d['shortName']?.toString() ?? d['short']?.toString() ?? '';
+                final discName = d.fullName;
+                final discShort = d.shortName ?? '';
                 return _CardTile(
                   icon: Icons.school,
                   title: discShort.isNotEmpty ? '$discShort — $discName' : discName,
                   subtitle: widget.kafedraName,
-                  onTap: () {
-                    if (discId == null) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => _DisciplineJournalListPage(
-                          disciplineId: discId,
-                          disciplineName: discName,
-                        ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => _DisciplineJournalListPage(
+                        disciplineId: d.id,
+                        disciplineName: discName,
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 );
               },
             ),
@@ -1091,247 +1098,6 @@ class _DisciplineJournalListPageState
     } catch (e) {
       setState(() { _isLoading = false; _error = e.toString(); });
     }
-  }
-
-  void _showCreateJournalDialog(BuildContext context) {
-    final allGroups = <Map<String, dynamic>>[];
-
-    Map<String, dynamic>? selectedGroup;
-    List<bool> semSelected = [];
-
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          List<String> semesters = [];
-          if (selectedGroup != null) {
-            for (int i = 0; i < 8; i++) {
-              final sem = i + 1;
-              final yearStart = DateTime.now().year + (i ~/ 2);
-              semesters.add('Семестр $sem (бакалаври) ($yearStart-${yearStart + 1})');
-            }
-            if (semSelected.length != semesters.length) {
-              semSelected = List.filled(semesters.length, false);
-            }
-          }
-
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(children: [
-                    const Expanded(
-                      child: Text('Створити новий журнал',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 17,
-                              color: AppTheme.textDark)),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 20),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ]),
-                  const Divider(height: 20),
-
-                  const Text('Група *',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textMid)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<Map<String, dynamic>>(
-                    value: selectedGroup,
-                    hint: const Text('Оберіть групу',
-                        style: TextStyle(fontSize: 13)),
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                    isExpanded: true,
-                    items: allGroups
-                        .map((g) => DropdownMenuItem(
-                              value: g,
-                              child: Text(
-                                '${g['name']} (${g['specialty']})',
-                                style: const TextStyle(fontSize: 13),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (val) => setDialogState(() {
-                      selectedGroup = val;
-                      semSelected = [];
-                    }),
-                  ),
-                  const SizedBox(height: 14),
-
-                  const Text('Дисципліна *',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textMid)),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppTheme.border),
-                      borderRadius: BorderRadius.circular(8),
-                      color: AppTheme.surface,
-                    ),
-                    child: Row(children: [
-                      Expanded(
-                        child: Text(
-                          widget.disciplineName,
-                          style: const TextStyle(
-                              fontSize: 13, color: AppTheme.textDark),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const Icon(Icons.keyboard_arrow_down,
-                          color: AppTheme.textMid, size: 20),
-                    ]),
-                  ),
-                  const SizedBox(height: 14),
-
-                  const Text('Семестри *',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textMid)),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFFBEB),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: const Color(0xFFFBBF24).withOpacity(0.4)),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('⚠️ ', style: TextStyle(fontSize: 13)),
-                        Expanded(
-                          child: Text(
-                            'Якщо дисципліна продовжується в іншому семестрі та закінчується заліком у іншому семестрі — обирайте відповідні семестри.',
-                            style: TextStyle(
-                                fontSize: 12, color: AppTheme.textDark),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  if (selectedGroup == null)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text('Спочатку оберіть групу',
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.textMid,
-                              fontStyle: FontStyle.italic)),
-                    )
-                  else
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: AppTheme.border),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: semesters.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1),
-                          itemBuilder: (_, i) => CheckboxListTile(
-                            dense: true,
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                            title: Text(semesters[i],
-                                style: const TextStyle(fontSize: 13)),
-                            value: i < semSelected.length
-                                ? semSelected[i]
-                                : false,
-                            onChanged: (val) => setDialogState(() {
-                              if (i < semSelected.length) {
-                                semSelected[i] = val ?? false;
-                              }
-                            }),
-                            controlAffinity:
-                                ListTileControlAffinity.leading,
-                            activeColor: AppTheme.primary,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: 20),
-                  Row(children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF374151),
-                          foregroundColor: Colors.white,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                        ),
-                        child: const Text('Скасувати'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: selectedGroup != null
-                            ? () {
-                                Navigator.pop(ctx);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text('Журнал створено'),
-                                    backgroundColor:
-                                        const Color(0xFF16A34A),
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(10)),
-                                  ),
-                                );
-                              }
-                            : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppTheme.border,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                        ),
-                        child: const Text('Створити журнал'),
-                      ),
-                    ),
-                  ]),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
   }
 
   @override
@@ -1389,7 +1155,14 @@ class _DisciplineJournalListPageState
               itemBuilder: (context, i) {
                 if (i == filtered.length) {
                   return _CreateJournalCard(
-                    onTap: () => _showCreateJournalDialog(context),
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => CreateJournalDialog(
+                        disciplineId: widget.disciplineId,
+                        disciplineName: widget.disciplineName,
+                        onCreated: _load,
+                      ),
+                    ),
                   );
                 }
                 final j = filtered[i];
@@ -1472,12 +1245,13 @@ class _DisciplineJournalListPageState
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 class _AddDisciplineCard extends StatelessWidget {
-  const _AddDisciplineCard();
+  final VoidCallback? onTap;
+  const _AddDisciplineCard({this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showAddDisciplineSheet(context),
+      onTap: onTap ?? () => showAddDisciplineSheet(context),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),

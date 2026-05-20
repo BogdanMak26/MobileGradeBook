@@ -25,6 +25,7 @@ class AuthState {
   final String? position;
   final String? groupName;
   final String? kafedraName;
+  final int? kafedraId;
   final int? groupId;
   final String? facultyName;
 
@@ -39,6 +40,7 @@ class AuthState {
     this.position,
     this.groupName,
     this.kafedraName,
+    this.kafedraId,
     this.groupId,
     this.facultyName,
   });
@@ -54,6 +56,7 @@ class AuthState {
     String? position,
     String? groupName,
     String? kafedraName,
+    int? kafedraId,
     int? groupId,
     String? facultyName,
   }) =>
@@ -68,6 +71,7 @@ class AuthState {
         position: position ?? this.position,
         groupName: groupName ?? this.groupName,
         kafedraName: kafedraName ?? this.kafedraName,
+        kafedraId: kafedraId ?? this.kafedraId,
         groupId: groupId ?? this.groupId,
         facultyName: facultyName ?? this.facultyName,
       );
@@ -182,8 +186,9 @@ class AuthViewModel extends StateNotifier<AuthState> {
   }
 
   void _setUserFromData(Map<String, dynamic> data) {
+    // Normalize API role names (server uses SUPERADMIN, TEACHER, etc.)
     final roles = (data['roles'] as List<dynamic>?)
-            ?.map((r) => r.toString())
+            ?.map((r) => _normalizeRole(r.toString()))
             .toList() ??
         [];
 
@@ -199,7 +204,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
         break;
       }
     }
-    role ??= data['role'] as String? ?? UserRole.instructor;
+    role ??= _normalizeRole(data['role'] as String? ?? UserRole.instructor);
 
     final firstName = data['name'] as String? ?? data['firstName'] as String? ?? '';
     final lastName = data['surname'] as String? ?? data['lastName'] as String? ?? '';
@@ -219,6 +224,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
       position: data['position'] as String?,
       groupName: group?['name'] as String? ?? data['groupName'] as String?,
       kafedraName: kafedra?['name'] as String? ?? data['kafedraName'] as String?,
+      kafedraId: kafedra?['id'] as int? ?? data['kafedraId'] as int?,
       groupId: group?['id'] as int? ?? data['groupId'] as int?,
       facultyName: data['facultyName'] as String?,
     );
@@ -297,6 +303,14 @@ class AuthViewModel extends StateNotifier<AuthState> {
       kafedraName: user.kafedraName,
     );
     _fcmService.subscribeToRoleTopic(role);
+  }
+
+  static String _normalizeRole(String raw) {
+    switch (raw) {
+      case 'SUPERADMIN':  return UserRole.superAdmin;
+      case 'TEACHER':     return UserRole.instructor;
+      default:            return raw;
+    }
   }
 
   String _generateCodeVerifier() {

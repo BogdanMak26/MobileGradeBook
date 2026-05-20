@@ -1,5 +1,6 @@
 // lib/features/disciplines/presentation/viewmodels/disciplines_viewmodel.dart
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
@@ -38,8 +39,9 @@ class DisciplinesViewModel extends StateNotifier<DisciplinesState> {
   final DisciplinesRepository _repo;
   final String _role;
   final int? _cadetId;
+  final int? _kafedraId;
 
-  DisciplinesViewModel(this._repo, this._role, this._cadetId)
+  DisciplinesViewModel(this._repo, this._role, this._cadetId, this._kafedraId)
       : super(const DisciplinesState()) {
     load();
   }
@@ -58,11 +60,22 @@ class DisciplinesViewModel extends StateNotifier<DisciplinesState> {
           _role == UserRole.departmentHead) {
         disciplines = await _repo.getAllDisciplines();
       } else {
-        disciplines = await _repo.getMyDisciplines();
+        disciplines = await _loadInstructorDisciplines();
       }
       state = state.copyWith(isLoading: false, disciplines: disciplines);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<List<DisciplineModel>> _loadInstructorDisciplines() async {
+    try {
+      return await _repo.getMyDisciplines();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 405 || e.response?.statusCode == 404) {
+        return await _repo.getAllDisciplines(kafedraId: _kafedraId);
+      }
+      rethrow;
     }
   }
 
@@ -89,5 +102,6 @@ final disciplinesViewModelProvider =
     ref.read(disciplinesRepositoryProvider),
     auth.role ?? '',
     int.tryParse(auth.userId ?? ''),
+    auth.kafedraId,
   );
 });

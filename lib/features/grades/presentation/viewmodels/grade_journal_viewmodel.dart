@@ -1,8 +1,10 @@
 // lib/features/grades/presentation/viewmodels/grade_journal_viewmodel.dart
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/api/repositories.dart';
 import '../../../../core/local/local_cache.dart';
 import '../../../../core/network/network_monitor.dart';
+import '../../../../core/utils/military_labels.dart';
 import '../../data/models/grade_model.dart';
 import '../../data/models/lesson_model.dart';
 import '../../data/repositories/grades_repository.dart';
@@ -48,10 +50,11 @@ class JournalState {
 
 class GradeJournalViewModel extends StateNotifier<JournalState> {
   final GradesRepository _repo;
+  final AttendsRepository _attendsRepo;
   final LocalCache _cache;
   final NetworkMonitor _network;
 
-  GradeJournalViewModel(this._repo, this._cache, this._network)
+  GradeJournalViewModel(this._repo, this._attendsRepo, this._cache, this._network)
       : super(const JournalState());
 
   // ── Журнал оцінок ─────────────────────────────────────────────────────────
@@ -167,6 +170,52 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
       state = state.copyWith(error: e.toString());
     }
   }
+
+  // ── Збереження відвідуваності (batch) ──────────────────────────────────────
+  // attendance: {cadetFullName: [code per lesson index]} — same structure as page state.
+  // teacherId: used to associate the attend record with a teacher.
+  Future<void> saveAttendances({
+    required Map<String, List<String?>> attendance,
+    required int teacherId,
+  }) async {
+    final journal = state.journal;
+    if (journal == null) return;
+    if (!_network.isOnline) {
+      state = state.copyWith(error: "Немає з'єднання. Спробуйте при підключенні.");
+      return;
+    }
+
+    state = state.copyWith(isSyncing: true, syncMessage: null);
+
+    final attends = <Map<String, dynamic>>[];
+    for (final cadet in journal.cadets) {
+      final cadetAtt = attendance[cadet.fullName];
+      if (cadetAtt == null) continue;
+      for (int i = 0; i < journal.lessons.length && i < cadetAtt.length; i++) {
+        final serverEnum = MilitaryLabels.attendEnum(cadetAtt[i]);
+        if (serverEnum != null) {
+          attends.add({
+            'cadetId': cadet.id,
+            'lessonId': journal.lessons[i].id,
+            'teacherId': teacherId,
+            'attended': serverEnum,
+          });
+        }
+      }
+    }
+
+    if (attends.isEmpty) {
+      state = state.copyWith(isSyncing: false, syncMessage: '✓ Без змін');
+      return;
+    }
+
+    try {
+      await _attendsRepo.batchAttends(attends);
+      state = state.copyWith(isSyncing: false, syncMessage: '✓ Відвідуваність збережено');
+    } catch (e) {
+      state = state.copyWith(isSyncing: false, error: e.toString());
+    }
+  }
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
@@ -175,6 +224,7 @@ final gradeJournalViewModelProvider =
     StateNotifierProvider<GradeJournalViewModel, JournalState>((ref) {
   return GradeJournalViewModel(
     ref.read(gradesRepositoryProvider),
+    ref.read(attendsRepositoryProvider),
     ref.read(localCacheProvider),
     ref.read(networkMonitorProvider),
   );
