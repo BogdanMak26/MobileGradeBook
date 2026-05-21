@@ -6,6 +6,7 @@ import '../../../../core/api/repositories.dart';
 import '../../../../core/utils/military_labels.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
+import '../../../journals/presentation/pages/journals_page.dart';
 
 // ── Сторінка всіх навчальних груп ────────────────────────────────────────────
 
@@ -196,17 +197,19 @@ class _GroupCard extends StatelessWidget {
                       color: AppTheme.primary),
                 ),
                 const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(6),
+                if (group['courseNumber'] != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text('${group['courseNumber']} курс',
+                        style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primary)),
                   ),
-                  child: Text('ID: ${group['id']}',
-                      style: const TextStyle(
-                          fontSize: 10, color: AppTheme.textMid)),
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -256,23 +259,23 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    setState(() { _isLoading = true; _error = null; });
     try {
-      final raw = await ref
-          .read(cadetsRepositoryProvider)
-          .getCadets(groupId: widget.groupId);
+      final group = await ref.read(groupsRepositoryProvider).getGroupById(widget.groupId);
+      final cadetsList = (group['cadets'] as List<dynamic>? ?? [])
+          .map((e) => e as Map<String, dynamic>)
+          .toList()
+        ..sort((a, b) {
+          final aName = '${a['surname'] ?? ''} ${a['name'] ?? ''}'.toLowerCase();
+          final bName = '${b['surname'] ?? ''} ${b['name'] ?? ''}'.toLowerCase();
+          return aName.compareTo(bName);
+        });
       setState(() {
-        _cadets = raw.map((e) => e as Map<String, dynamic>).toList();
+        _cadets = cadetsList;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = e.toString();
-      });
+      setState(() { _isLoading = false; _error = e.toString(); });
     }
   }
 
@@ -303,11 +306,40 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage> {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-              child: Text(
-                'Деталі ${g['name'] ?? ''} групи',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold, color: AppTheme.textDark),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Деталі ${g['name'] ?? ''} групи',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold, color: AppTheme.textDark),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GroupDisciplinesPage(
+                          groupId: widget.groupId,
+                          groupName: g['name']?.toString() ?? '—',
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.menu_book_outlined, size: 16),
+                    label: const Text('Журнали'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      textStyle: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -618,7 +650,13 @@ String _groupFaculty(Map<String, dynamic> g) {
   if (f is Map<String, dynamic>) {
     return f['name']?.toString() ?? f['shortName']?.toString() ?? '—';
   }
-  return f?.toString() ?? g['facultyName']?.toString() ?? '—';
+  final name = f?.toString() ?? g['facultyName']?.toString();
+  if (name != null && name.isNotEmpty && name != 'null') return name;
+  final num = g['facultyNumber'];
+  if (num != null) return 'Факультет №$num';
+  final id = g['facultyId'];
+  if (id != null) return 'Факультет №$id';
+  return '—';
 }
 
 String _groupSpecialty(Map<String, dynamic> g) {
@@ -628,6 +666,12 @@ String _groupSpecialty(Map<String, dynamic> g) {
       g['specialtyName']?.toString() ?? '';
   const map = <String, String>{
     'COMPUTER_SCIENCES': "Комп'ютерні науки",
+    'CYBERSECURITY_AND_INFORMATION_PROTECTION': 'Кібербезпека та захист інформації',
+    'INFORMATION_SYSTEMS_AND_TECHNOLOGIES': 'Інформаційні системи і технології',
+    'ELECTRONICS_ELECTRONIC_COMMUNICATIONS_INSTRUMENTATION_AND_RADIO_ENGINEERING':
+        'Електроніка, електронні комунікації, прил. та радіотехніка',
+    'MILITARY_MANAGEMENT': 'Військове управління',
+    'ARMAMENT_AND_MILITARY_EQUIPMENT': 'Озброєння та військова техніка',
     'INFORMATION_SYSTEMS': 'Інформаційні системи',
     'ELECTRONICS': 'Електроніка',
     'TELECOMMUNICATIONS': 'Телекомунікації',
@@ -660,12 +704,15 @@ String _groupDegree(Map<String, dynamic> g) {
 String _groupType(Map<String, dynamic> g) {
   final raw = g['formOfStudy']?.toString() ??
       g['type']?.toString() ??
+      g['groupType']?.toString() ??
       g['formOfEducation']?.toString() ?? '';
   const map = <String, String>{
     'FULL_TIME': 'Денна',
+    'CORRESPONDENCE': 'Заочна',
     'PART_TIME': 'Заочна',
     'EVENING': 'Вечірня',
     'DISTANCE': 'Дистанційна',
+    'EXTRAMURAL': 'Екстернат',
   };
   if (raw.isEmpty) return '—';
   return map[raw] ?? raw;

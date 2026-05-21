@@ -128,7 +128,7 @@ class _AddDisciplineSheetState extends ConsumerState<AddDisciplineSheet> {
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
-          builder: (_) => AlertDialog(
+          builder: (dialogCtx) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text('У вас є незбережені зміни.',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
@@ -140,7 +140,7 @@ class _AddDisciplineSheetState extends ConsumerState<AddDisciplineSheet> {
             actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             actions: [
               OutlinedButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(dialogCtx, false),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppTheme.textDark,
                   side: const BorderSide(color: AppTheme.border),
@@ -150,7 +150,7 @@ class _AddDisciplineSheetState extends ConsumerState<AddDisciplineSheet> {
                 child: const Text('Продовжити'),
               ),
               ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () => Navigator.pop(dialogCtx, true),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFEF4444),
                   foregroundColor: Colors.white,

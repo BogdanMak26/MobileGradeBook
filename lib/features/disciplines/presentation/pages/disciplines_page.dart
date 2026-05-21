@@ -108,6 +108,23 @@ class _DisciplinesPageState extends ConsumerState<DisciplinesPage> {
               ],
             ]),
           ),
+          if (role == UserRole.instructor)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 16, 0),
+              child: Row(children: [
+                Checkbox(
+                  value: vm.myOnly,
+                  onChanged: (v) => ref
+                      .read(disciplinesViewModelProvider.notifier)
+                      .setMyOnly(v ?? true),
+                  activeColor: AppTheme.primary,
+                ),
+                const Text(
+                  'Тільки мої дисципліни',
+                  style: TextStyle(fontSize: 13, color: AppTheme.textDark),
+                ),
+              ]),
+            ),
           if (vm.isLoading)
             const Expanded(
                 child: Center(child: CircularProgressIndicator()))

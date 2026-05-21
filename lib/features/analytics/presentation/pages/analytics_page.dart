@@ -25,37 +25,64 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
   List<Map<String, dynamic>> _apiCadets = [];
   bool _isLoading = false;
 
-  // Фільтри
-  String? _selectedFaculty;
-  String? _selectedCourse;
-  String? _selectedSemester;
-  String? _selectedGroup;
+  // Filter data from API
+  List<Map<String, dynamic>> _allFaculties = [];
+  List<Map<String, dynamic>> _allGroups = [];
+  List<Map<String, dynamic>> _allSemesters = [];
+  bool _filtersLoading = false;
 
-  static const _faculties = [
-    'Факультет інформаційних технологій',
-    'Факультет кібербезпеки',
-  ];
+  // Selected filter IDs
+  int? _selectedFacultyId;
+  int? _selectedCourse; // 1-4, client-side filter for semesters visibility
+  int? _selectedGroupId;
+  int? _selectedSemesterId;
 
-  static const _courses = ['1 курс', '2 курс', '3 курс', '4 курс'];
+  void _resetFilters() {
+    setState(() {
+      _selectedFacultyId = null;
+      _selectedCourse = null;
+      _selectedGroupId = null;
+      _selectedSemesterId = null;
+      _allSemesters = [];
+    });
+    _loadRates();
+  }
 
-  static const _semestersByCourse = {
-    '1 курс': ['1 семестр', '2 семестр'],
-    '2 курс': ['3 семестр', '4 семестр'],
-    '3 курс': ['5 семестр', '6 семестр'],
-    '4 курс': ['7 семестр', '8 семестр'],
-  };
+  Future<void> _loadFilters() async {
+    setState(() => _filtersLoading = true);
+    final facsRaw = await ref
+        .read(facultiesRepositoryProvider)
+        .getFaculties()
+        .catchError((_) => <dynamic>[]);
+    final groupsRaw = await ref
+        .read(groupsRepositoryProvider)
+        .getGroups()
+        .catchError((_) => <dynamic>[]);
+    final semsRaw = await ref
+        .read(semestersRepositoryProvider)
+        .getSemesters()
+        .catchError((_) => <dynamic>[]);
+    if (!mounted) return;
+    setState(() {
+      _allFaculties = facsRaw.whereType<Map<String, dynamic>>().toList();
+      _allGroups = groupsRaw.whereType<Map<String, dynamic>>().toList();
+      // getSemesters може повернути paginated об'єкт — витягуємо content
+      final semsList = semsRaw.isNotEmpty ? semsRaw : <dynamic>[];
+      _allSemesters = semsList.whereType<Map<String, dynamic>>().toList();
+      _filtersLoading = false;
+    });
+  }
 
-  static const _groupsByFaculty = {
-    'Факультет інформаційних технологій': ['221', '222', '223'],
-    'Факультет кібербезпеки': ['321', '322'],
-  };
-
-  void _resetFilters() => setState(() {
-        _selectedFaculty = null;
-        _selectedCourse = null;
-        _selectedSemester = null;
-        _selectedGroup = null;
-      });
+  Future<void> _loadSemestersForGroup(int groupId) async {
+    final sems = await ref
+        .read(semestersRepositoryProvider)
+        .getSemestersByGroup(groupId)
+        .catchError((_) => <dynamic>[]);
+    if (!mounted) return;
+    setState(() {
+      _allSemesters = sems.whereType<Map<String, dynamic>>().toList();
+    });
+  }
 
   Future<void> _loadRates() async {
     final auth = ref.read(authViewModelProvider);
@@ -65,8 +92,9 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     setState(() => _isLoading = true);
     try {
       final result = await ref.read(ratesRepositoryProvider).getRates(
-        groupId: isCadet ? groupId : null,
-        size: 500,
+        groupId: isCadet ? groupId : _selectedGroupId,
+        semesterId: _selectedSemesterId,
+        size: 5000,
       );
       final content = result['content'] as List<dynamic>? ?? [];
       final cadets = content.map((r) {
@@ -95,7 +123,11 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadRates());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadRates();
+      final role = ref.read(authViewModelProvider).role ?? '';
+      if (role != UserRole.cadet) _loadFilters();
+    });
   }
 
   @override
@@ -117,14 +149,38 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
 
     final visibleCadets = _apiCadets;
 
+    // Групи тільки коли обраний факультет; фільтр по курсу якщо обраний
+    final filteredGroups = _selectedFacultyId == null
+        ? <Map<String, dynamic>>[]
+        : _allGroups.where((g) {
+            final fId = (g['facultyId'] as num?)?.toInt() ??
+                ((g['faculty'] as Map<String, dynamic>?)?['id'] as num?)
+                    ?.toInt();
+            final courseNum = (g['courseNumber'] as num?)?.toInt();
+            return fId == _selectedFacultyId &&
+                (_selectedCourse == null || courseNum == _selectedCourse);
+          }).toList();
+
+    // Набір назв груп для client-side фільтрації (факультет + курс)
+    // Використовується тільки коли _allGroups завантажені і група не обрана
+    Set<String>? targetGroupNames;
+    if (_selectedGroupId == null &&
+        _allGroups.isNotEmpty &&
+        (_selectedFacultyId != null || _selectedCourse != null)) {
+      targetGroupNames = filteredGroups
+          .map((g) => (g['name'] as String?) ?? '')
+          .where((n) => n.isNotEmpty)
+          .toSet();
+    }
+
     final filtered = visibleCadets.where((c) {
       final matchSearch = c['name']
           .toString()
           .toLowerCase()
           .contains(_search.toLowerCase());
-      final matchGroup =
-          _selectedGroup == null || c['group'] == _selectedGroup;
-      return matchSearch && (isCadet || matchGroup);
+      final matchGroups = targetGroupNames == null ||
+          targetGroupNames.contains(c['group']);
+      return matchSearch && matchGroups;
     }).toList();
 
     final roleIcon = _roleIcon(role);
@@ -215,26 +271,43 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
           if (!isCadet) ...[
             SliverToBoxAdapter(
               child: _FiltersCard(
-                faculties: _faculties,
-                courses: _courses,
-                semestersByCourse: _semestersByCourse,
-                groupsByFaculty: _groupsByFaculty,
-                selectedFaculty: _selectedFaculty,
+                faculties: _allFaculties,
+                groups: filteredGroups,
+                semesters: _allSemesters,
+                selectedFacultyId: _selectedFacultyId,
                 selectedCourse: _selectedCourse,
-                selectedSemester: _selectedSemester,
-                selectedGroup: _selectedGroup,
-                onFacultyChanged: (v) => setState(() {
-                  _selectedFaculty = v;
-                  _selectedGroup = null;
+                selectedGroupId: _selectedGroupId,
+                selectedSemesterId: _selectedSemesterId,
+                onFacultyChanged: (id) {
+                  final hadGroup = _selectedGroupId != null;
+                  setState(() {
+                    _selectedFacultyId = id;
+                    _selectedCourse = null;
+                    _selectedGroupId = null;
+                    _selectedSemesterId = null;
+                    _allSemesters = [];
+                  });
+                  if (hadGroup) _loadRates();
+                },
+                onCourseChanged: (course) => setState(() {
+                  _selectedCourse = course;
+                  _selectedSemesterId = null;
                 }),
-                onCourseChanged: (v) => setState(() {
-                  _selectedCourse = v;
-                  _selectedSemester = null;
-                }),
-                onSemesterChanged: (v) =>
-                    setState(() => _selectedSemester = v),
-                onGroupChanged: (v) => setState(() => _selectedGroup = v),
+                onGroupChanged: (id) {
+                  setState(() {
+                    _selectedGroupId = id;
+                    _selectedSemesterId = null;
+                    _allSemesters = [];
+                  });
+                  if (id != null) _loadSemestersForGroup(id);
+                  _loadRates();
+                },
+                onSemesterChanged: (id) {
+                  setState(() => _selectedSemesterId = id);
+                  _loadRates();
+                },
                 onReset: _resetFilters,
+                isLoading: _filtersLoading,
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -402,50 +475,96 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
 // ── Блок фільтрів ────────────────────────────────────────────────────────────
 
 class _FiltersCard extends StatelessWidget {
-  final List<String> faculties;
-  final List<String> courses;
-  final Map<String, List<String>> semestersByCourse;
-  final Map<String, List<String>> groupsByFaculty;
-
-  final String? selectedFaculty;
-  final String? selectedCourse;
-  final String? selectedSemester;
-  final String? selectedGroup;
-
-  final ValueChanged<String?> onFacultyChanged;
-  final ValueChanged<String?> onCourseChanged;
-  final ValueChanged<String?> onSemesterChanged;
-  final ValueChanged<String?> onGroupChanged;
+  final List<Map<String, dynamic>> faculties;
+  final List<Map<String, dynamic>> groups;
+  final List<Map<String, dynamic>> semesters;
+  final int? selectedFacultyId;
+  final int? selectedCourse;
+  final int? selectedGroupId;
+  final int? selectedSemesterId;
+  final ValueChanged<int?> onFacultyChanged;
+  final ValueChanged<int?> onCourseChanged;
+  final ValueChanged<int?> onGroupChanged;
+  final ValueChanged<int?> onSemesterChanged;
   final VoidCallback onReset;
+  final bool isLoading;
 
   const _FiltersCard({
     required this.faculties,
-    required this.courses,
-    required this.semestersByCourse,
-    required this.groupsByFaculty,
-    required this.selectedFaculty,
+    required this.groups,
+    required this.semesters,
+    required this.selectedFacultyId,
     required this.selectedCourse,
-    required this.selectedSemester,
-    required this.selectedGroup,
+    required this.selectedGroupId,
+    required this.selectedSemesterId,
     required this.onFacultyChanged,
     required this.onCourseChanged,
-    required this.onSemesterChanged,
     required this.onGroupChanged,
+    required this.onSemesterChanged,
     required this.onReset,
+    this.isLoading = false,
   });
+
+  static int _id(Map<String, dynamic> m) => (m['id'] as num).toInt();
+
+  static String _facultyLabel(Map<String, dynamic> f) =>
+      f['name'] as String? ?? f['fullName'] as String? ?? '—';
+
+  static String _groupLabel(Map<String, dynamic> g) =>
+      g['name'] as String? ?? g['groupNumber'] as String? ?? '—';
+
+  static String _semesterLabel(Map<String, dynamic> s) {
+    final n = (s['semesterNumber'] as num?)?.toInt() ??
+        (s['number'] as num?)?.toInt();
+    if (n != null) return 'Семестр $n';
+    return s['name'] as String? ?? '—';
+  }
+
+  static const _courseLabels = ['1 курс', '2 курс', '3 курс', '4 курс'];
+
+  static int _semesterNum(Map<String, dynamic> s) =>
+      (s['semesterNumber'] as num?)?.toInt() ??
+      (s['number'] as num?)?.toInt() ??
+      0;
+
+  static int _courseForSem(Map<String, dynamic> s) {
+    final n = _semesterNum(s);
+    if (n <= 2) return 1;
+    if (n <= 4) return 2;
+    if (n <= 6) return 3;
+    return 4;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final availableGroups = selectedFaculty != null
-        ? groupsByFaculty[selectedFaculty] ?? []
-        : <String>[];
-    final availableSemesters = selectedCourse != null
-        ? semestersByCourse[selectedCourse] ?? []
-        : <String>[];
-    final hasFilters = selectedFaculty != null ||
+    final hasFilters = selectedFacultyId != null ||
         selectedCourse != null ||
-        selectedSemester != null ||
-        selectedGroup != null;
+        selectedGroupId != null ||
+        selectedSemesterId != null;
+
+    final facultyNames = faculties.map(_facultyLabel).toList();
+    final selectedFacultyName = selectedFacultyId == null
+        ? null
+        : faculties
+            .where((f) => _id(f) == selectedFacultyId)
+            .map(_facultyLabel)
+            .cast<String?>()
+            .firstWhere((_) => true, orElse: () => null);
+
+    // Дедуплікація семестрів по номеру (беремо останній по id)
+    final seenNums = <int>{};
+    final uniqueSems = ([...semesters]
+          ..sort((a, b) => _id(b).compareTo(_id(a))))
+        .where((s) => seenNums.add(_semesterNum(s)))
+        .toList()
+      ..sort((a, b) => _semesterNum(a).compareTo(_semesterNum(b)));
+
+    // Семестри для обраного курсу
+    final semestersForCourse = selectedCourse != null
+        ? uniqueSems
+            .where((s) => _courseForSem(s) == selectedCourse)
+            .toList()
+        : <Map<String, dynamic>>[];
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -457,154 +576,174 @@ class _FiltersCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Заголовок
+          // Заголовок — як у веб-версії
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppTheme.secondary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.tune_rounded,
-                      size: 16, color: AppTheme.secondary),
-                ),
-                const SizedBox(width: 10),
                 const Text('Фільтри',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                         color: AppTheme.textDark)),
                 const Spacer(),
-                if (hasFilters)
-                  GestureDetector(
-                    onTap: onReset,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppTheme.danger.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: AppTheme.danger.withOpacity(0.3)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.restart_alt,
-                              size: 13, color: AppTheme.danger),
-                          SizedBox(width: 4),
-                          Text('Скинути фільтри',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.danger,
-                                  fontWeight: FontWeight.w600)),
-                        ],
-                      ),
+                GestureDetector(
+                  onTap: hasFilters ? onReset : null,
+                  child: Text(
+                    'Скинути фільтри',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: hasFilters
+                          ? AppTheme.secondary
+                          : AppTheme.textLight,
+                      fontWeight: hasFilters
+                          ? FontWeight.w600
+                          : FontWeight.normal,
                     ),
-                  )
-                else
-                  const Text('Скинути фільтри',
-                      style: TextStyle(
-                          fontSize: 12, color: AppTheme.textLight)),
+                  ),
+                ),
               ],
             ),
           ),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Факультет
-                const Text('Факультет',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textDark)),
-                const SizedBox(height: 6),
-                _FilterDropdown(
-                  hint: 'Оберіть факультет',
-                  value: selectedFaculty,
-                  items: faculties,
-                  onChanged: onFacultyChanged,
-                ),
-                const SizedBox(height: 14),
-
-                // Курс
-                const Text('Курс',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textDark)),
-                const SizedBox(height: 6),
-                _FilterDropdown(
-                  hint: 'Оберіть курс',
-                  value: selectedCourse,
-                  items: courses,
-                  onChanged: onCourseChanged,
-                ),
-                const SizedBox(height: 14),
-
-                // Семестри
-                const Text('Семестри',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textDark)),
-                const SizedBox(height: 6),
-                if (availableSemesters.isEmpty)
-                  _FilterPlaceholder(
-                    text: selectedCourse == null
-                        ? 'Оберіть курс щоб побачити доступні семестри'
-                        : 'Немає доступних семестрів',
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: availableSemesters
-                        .map((s) => _FilterChip(
-                              label: s,
-                              selected: selectedSemester == s,
-                              onTap: () => onSemesterChanged(
-                                  selectedSemester == s ? null : s),
-                            ))
-                        .toList(),
+          if (isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Факультет
+                  const Text('Факультет',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark)),
+                  const SizedBox(height: 6),
+                  _FilterDropdown(
+                    hint: 'Оберіть факультет',
+                    value: selectedFacultyName,
+                    items: facultyNames,
+                    onChanged: (name) {
+                      if (name == null) {
+                        onFacultyChanged(null);
+                        return;
+                      }
+                      final match = faculties
+                          .where((f) => _facultyLabel(f) == name)
+                          .cast<Map<String, dynamic>?>()
+                          .firstWhere((_) => true, orElse: () => null);
+                      onFacultyChanged(match != null ? _id(match) : null);
+                    },
                   ),
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
-                // Групи
-                const Text('Групи',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textDark)),
-                const SizedBox(height: 6),
-                if (availableGroups.isEmpty)
-                  _FilterPlaceholder(
-                    text: selectedFaculty == null
-                        ? 'Оберіть факультет щоб побачити доступні групи'
-                        : 'Немає доступних груп',
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: availableGroups
-                        .map((g) => _FilterChip(
-                              label: g,
-                              selected: selectedGroup == g,
-                              onTap: () => onGroupChanged(
-                                  selectedGroup == g ? null : g),
-                            ))
-                        .toList(),
+                  // Курс
+                  const Text('Курс',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark)),
+                  const SizedBox(height: 6),
+                  _FilterDropdown(
+                    hint: 'Оберіть курс',
+                    value: selectedCourse != null
+                        ? _courseLabels[selectedCourse! - 1]
+                        : null,
+                    items: _courseLabels,
+                    onChanged: (label) {
+                      if (label == null) {
+                        onCourseChanged(null);
+                        return;
+                      }
+                      final idx = _courseLabels.indexOf(label);
+                      onCourseChanged(idx >= 0 ? idx + 1 : null);
+                    },
                   ),
-              ],
+                  const SizedBox(height: 14),
+
+                  // Групи — з'являються після вибору факультету
+                  const Text('Групи',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark)),
+                  const SizedBox(height: 6),
+                  if (selectedFacultyId == null)
+                    const _FilterPlaceholder(
+                        text:
+                            'Оберіть факультет щоб побачити доступні групи')
+                  else if (groups.isEmpty)
+                    const _FilterPlaceholder(
+                        text: 'Немає доступних груп')
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: groups.map((g) {
+                        final id = _id(g);
+                        return _FilterChip(
+                          label: _groupLabel(g),
+                          selected: selectedGroupId == id,
+                          onTap: () => onGroupChanged(
+                              selectedGroupId == id ? null : id),
+                        );
+                      }).toList(),
+                    ),
+                  const SizedBox(height: 14),
+
+                  // Семестри — з'являються після вибору групи
+                  const Text('Семестри',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark)),
+                  const SizedBox(height: 6),
+                  if (selectedGroupId == null)
+                    const _FilterPlaceholder(
+                        text: 'Оберіть групу щоб побачити доступні семестри')
+                  else if (semesters.isEmpty)
+                    const _FilterPlaceholder(
+                        text: 'Завантаження семестрів...')
+                  else if (semestersForCourse.isEmpty && selectedCourse != null)
+                    const _FilterPlaceholder(
+                        text: 'Немає семестрів для цього курсу')
+                  else if (semestersForCourse.isEmpty)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: uniqueSems.map((s) {
+                        final id = _id(s);
+                        return _FilterChip(
+                          label: _semesterLabel(s),
+                          selected: selectedSemesterId == id,
+                          onTap: () => onSemesterChanged(
+                              selectedSemesterId == id ? null : id),
+                        );
+                      }).toList(),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: semestersForCourse.map((s) {
+                        final id = _id(s);
+                        return _FilterChip(
+                          label: _semesterLabel(s),
+                          selected: selectedSemesterId == id,
+                          onTap: () => onSemesterChanged(
+                              selectedSemesterId == id ? null : id),
+                        );
+                      }).toList(),
+                    ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -627,8 +766,10 @@ class _FilterDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       value: value,
+      isExpanded: true,
       hint: Text(hint,
-          style: const TextStyle(color: AppTheme.textLight, fontSize: 14)),
+          style: const TextStyle(color: AppTheme.textLight, fontSize: 14),
+          overflow: TextOverflow.ellipsis),
       decoration: InputDecoration(
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 12),

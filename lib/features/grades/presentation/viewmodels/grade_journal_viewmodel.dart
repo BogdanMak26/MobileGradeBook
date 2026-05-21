@@ -83,6 +83,22 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     }
   }
 
+  // ── Журнал за journalId (GET /journals/{id}) ─────────────────────────────
+
+  Future<void> loadJournalById(int journalId) async {
+    state = const JournalState(isLoading: true);
+    if (!_network.isOnline) {
+      state = const JournalState();
+      return;
+    }
+    try {
+      final journal = await _repo.getJournalById(journalId);
+      state = state.copyWith(isLoading: false, journal: journal);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
   // ── Заняття (cache-first) ─────────────────────────────────────────────────
 
   Future<void> loadLessons(int journalId) async {

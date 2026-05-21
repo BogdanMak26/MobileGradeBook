@@ -22,6 +22,12 @@ class GradesRepository {
     return GradeJournalResponse.fromJson(response.data as Map<String, dynamic>);
   }
 
+  // ── Журнал за ID (GET /journals/{journalId}) ─────────────────────────────
+  Future<GradeJournalResponse> getJournalById(int journalId) async {
+    final response = await _client.dio.get('/journals/$journalId');
+    return GradeJournalResponse.fromJson(response.data as Map<String, dynamic>);
+  }
+
   // ── Заняття журналу (GET /lessons/journal/{journalId}) ────────────────────
   Future<List<LessonModel>> getLessons(int journalId) async {
     final response = await _client.dio.get('/lessons/journal/$journalId');

@@ -47,6 +47,26 @@ class DisciplinesRepository {
     return list.map((e) => JournalModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  // ── Журнали групи (GET /journals?group_id={id}) ──────────────────────────
+  Future<List<JournalModel>> getGroupJournals(int groupId) async {
+    final response = await _client.dio.get(
+      '/journals',
+      queryParameters: {'group_id': groupId},
+    );
+    final list = response.data as List<dynamic>;
+    return list.map((e) => JournalModel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // ── Всі дисципліни — сирий JSON (зберігає масив teachers) ──────────────
+  Future<List<Map<String, dynamic>>> getAllDisciplinesRaw({int? kafedraId}) async {
+    final response = await _client.dio.get(
+      '/disciplines',
+      queryParameters: kafedraId != null ? {'kafedraId': kafedraId} : null,
+    );
+    final list = response.data as List<dynamic>;
+    return list.map((e) => e as Map<String, dynamic>).toList();
+  }
+
   // ── Всі дисципліни (для адміна/нач.кафедри) ─────────────────────────────
   Future<List<DisciplineModel>> getAllDisciplines({int? kafedraId}) async {
     final response = await _client.dio.get(

@@ -13,12 +13,14 @@ class DisciplinesState {
   final String? error;
   final List<DisciplineModel> disciplines;
   final Map<int, List<JournalModel>> journals;
+  final bool myOnly;
 
   const DisciplinesState({
     this.isLoading = false,
     this.error,
     this.disciplines = const [],
     this.journals = const {},
+    this.myOnly = true,
   });
 
   DisciplinesState copyWith({
@@ -26,12 +28,14 @@ class DisciplinesState {
     String? error,
     List<DisciplineModel>? disciplines,
     Map<int, List<JournalModel>>? journals,
+    bool? myOnly,
   }) =>
       DisciplinesState(
         isLoading: isLoading ?? this.isLoading,
         error: error,
         disciplines: disciplines ?? this.disciplines,
         journals: journals ?? this.journals,
+        myOnly: myOnly ?? this.myOnly,
       );
 }
 
@@ -60,12 +64,20 @@ class DisciplinesViewModel extends StateNotifier<DisciplinesState> {
           _role == UserRole.departmentHead) {
         disciplines = await _repo.getAllDisciplines();
       } else {
-        disciplines = await _loadInstructorDisciplines();
+        disciplines = state.myOnly
+            ? await _loadInstructorDisciplines()
+            : await _repo.getAllDisciplines(kafedraId: _kafedraId);
       }
       state = state.copyWith(isLoading: false, disciplines: disciplines);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
+  }
+
+  Future<void> setMyOnly(bool myOnly) async {
+    if (_role != UserRole.instructor) return;
+    state = state.copyWith(myOnly: myOnly);
+    await load();
   }
 
   Future<List<DisciplineModel>> _loadInstructorDisciplines() async {

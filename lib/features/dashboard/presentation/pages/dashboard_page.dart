@@ -217,7 +217,7 @@ class _CadetDashboard extends ConsumerWidget {
                   progress: attendancePct / 100)),
             ])),
           const SizedBox(height: 16),
-          animated(2, const _QuickActions(isCadet: true)),
+          animated(2, const _QuickActions(role: UserRole.cadet)),
         ],
       ),
     );
@@ -262,7 +262,7 @@ class _InstructorDashboard extends ConsumerWidget {
               color: AppTheme.secondary,
               wide: true)),
           const SizedBox(height: 16),
-          animated(2, const _QuickActions(isCadet: false)),
+          animated(2, _QuickActions(role: role)),
         ],
       ),
     );
@@ -304,7 +304,7 @@ class _AdminDashboard extends ConsumerWidget {
               color: AppTheme.secondary,
               wide: true)),
           const SizedBox(height: 16),
-          animated(2, const _QuickActions(isCadet: false, isAdmin: true)),
+          animated(2, const _QuickActions(role: UserRole.superAdmin)),
         ],
       ),
     );
@@ -473,34 +473,37 @@ class _StatCard extends StatelessWidget {
 // ── Quick Actions ─────────────────────────────────────────────────────────────
 
 class _QuickActions extends ConsumerWidget {
-  final bool isCadet;
-  final bool isAdmin;
-  const _QuickActions({required this.isCadet, this.isAdmin = false});
+  final String role;
+  const _QuickActions({required this.role});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isCadet = role == UserRole.cadet;
+    final isAdmin = role == UserRole.superAdmin;
+    final showDisciplines = isCadet ||
+        role == UserRole.instructor ||
+        role == UserRole.departmentHead ||
+        isAdmin;
+    final showJournals = role == UserRole.facultyEducation ||
+        role == UserRole.instituteEducation ||
+        isAdmin;
+
     final disciplinesVm = ref.watch(disciplinesViewModelProvider);
     final discCount = disciplinesVm.disciplines.length;
     final items = <_ActionItem>[
-      _ActionItem(
-          icon: Icons.menu_book_rounded,
-          label: 'Дисципліни',
-          sub: isCadet
-              ? 'Мої дисципліни'
-              : discCount > 0
-                  ? '$discCount дисциплін'
-                  : 'Дисципліни',
-          color: AppTheme.secondary,
-          gradientColors: const [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-          onTap: () => context.go('/disciplines')),
-      _ActionItem(
-          icon: Icons.bar_chart_rounded,
-          label: 'Рейтинг',
-          sub: 'Успішність',
-          color: AppTheme.primary,
-          gradientColors: const [Color(0xFFF97316), Color(0xFFFACC15)],
-          onTap: () => context.go('/analytics')),
-      if (!isCadet)
+      if (showDisciplines)
+        _ActionItem(
+            icon: Icons.menu_book_rounded,
+            label: 'Дисципліни',
+            sub: isCadet
+                ? 'Мої дисципліни'
+                : discCount > 0
+                    ? '$discCount дисциплін'
+                    : 'Дисципліни',
+            color: AppTheme.secondary,
+            gradientColors: const [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+            onTap: () => context.go('/disciplines')),
+      if (showJournals)
         _ActionItem(
             icon: Icons.library_books_rounded,
             label: 'Журнали',
@@ -508,6 +511,13 @@ class _QuickActions extends ConsumerWidget {
             color: const Color(0xFF059669),
             gradientColors: const [Color(0xFF059669), Color(0xFF34D399)],
             onTap: () => context.go('/journals')),
+      _ActionItem(
+          icon: Icons.bar_chart_rounded,
+          label: 'Рейтинг',
+          sub: 'Успішність',
+          color: AppTheme.primary,
+          gradientColors: const [Color(0xFFF97316), Color(0xFFFACC15)],
+          onTap: () => context.go('/analytics')),
       _ActionItem(
           icon: Icons.calendar_month_rounded,
           label: 'Розклад',

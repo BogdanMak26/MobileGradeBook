@@ -28,7 +28,9 @@
       "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook\\\\grade-book-app\\\\src\\\\main\\\\resources\" -File)",
       "Bash(Select-String -Pattern \"error|Error|warning|Warning\")",
       "Bash(dir lib\\\\core\\\\api\\\\repositories.dart)",
-      "Bash(dir lib\\\\features\\\\disciplines\\\\data\\\\repositories\\\\disciplines_repository.dart)"
+      "Bash(dir lib\\\\features\\\\disciplines\\\\data\\\\repositories\\\\disciplines_repository.dart)",
+      "Bash(dir K:\\\\Diplom\\\\gradebook_mobile\\\\images_claude *)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

@@ -21,6 +21,7 @@ import '../../features/notifications/presentation/pages/notifications_settings_p
 import '../../features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../features/auth/presentation/pages/lock_page.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../core/utils/app_constants.dart';
 
 const _rootPaths = {
   '/dashboard', '/disciplines', '/analytics',
@@ -196,6 +197,19 @@ class _MainShellState extends ConsumerState<MainShell>
   }
 }
 
+// ── Role helpers ──────────────────────────────────────────────────────────────
+
+bool _roleHasDisciplines(String role) =>
+    role == UserRole.cadet ||
+    role == UserRole.instructor ||
+    role == UserRole.departmentHead ||
+    role == UserRole.superAdmin;
+
+bool _roleHasJournals(String role) =>
+    role == UserRole.facultyEducation ||
+    role == UserRole.instituteEducation ||
+    role == UserRole.superAdmin;
+
 // ── Bottom Navigation — різна залежно від ролі ────────────────────────────────
 
 class _BottomNav extends StatelessWidget {
@@ -205,29 +219,59 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    final isCadet = role == 'CADET';
+    final isCadet = role == UserRole.cadet;
+    final hasDisciplines = _roleHasDisciplines(role);
+    final hasJournals = _roleHasJournals(role);
 
-    final navItems = isCadet
-        ? [
-            _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Головна', path: '/dashboard'),
-            _NavItem(icon: Icons.school_outlined, activeIcon: Icons.school_rounded, label: 'Дисципліни', path: '/disciplines'),
-            _NavItem(icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart_rounded, label: 'Рейтинг', path: '/analytics'),
-            _NavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профіль', path: '/profile'),
-            _NavItem(icon: Icons.menu_rounded, activeIcon: Icons.menu_rounded, label: 'Більше', path: ''),
-          ]
-        : [
-            _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Головна', path: '/dashboard'),
-            _NavItem(icon: Icons.school_outlined, activeIcon: Icons.school_rounded, label: 'Дисципліни', path: '/disciplines'),
-            _NavItem(icon: Icons.library_books_outlined, activeIcon: Icons.library_books_rounded, label: 'Журнали', path: '/journals'),
-            _NavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профіль', path: '/profile'),
-            _NavItem(icon: Icons.menu_rounded, activeIcon: Icons.menu_rounded, label: 'Більше', path: ''),
-          ];
+    // Будуємо список вкладок + відповідні маршрути для onTap.
+    // Формат: (navItem, path для go())
+    final entries = <({_NavItem item, String path})>[];
 
+    entries.add((
+      item: _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Головна'),
+      path: '/dashboard',
+    ));
+
+    if (hasDisciplines) {
+      entries.add((
+        item: _NavItem(icon: Icons.school_outlined, activeIcon: Icons.school_rounded, label: 'Дисципліни'),
+        path: '/disciplines',
+      ));
+    }
+
+    if (hasJournals) {
+      entries.add((
+        item: _NavItem(icon: Icons.library_books_outlined, activeIcon: Icons.library_books_rounded, label: 'Журнали'),
+        path: '/journals',
+      ));
+    }
+
+    if (isCadet) {
+      entries.add((
+        item: _NavItem(icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart_rounded, label: 'Рейтинг'),
+        path: '/analytics',
+      ));
+    }
+
+    entries.add((
+      item: _NavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профіль'),
+      path: '/profile',
+    ));
+
+    entries.add((
+      item: _NavItem(icon: Icons.menu_rounded, activeIcon: Icons.menu_rounded, label: 'Більше'),
+      path: '',
+    ));
+
+    // Визначаємо активний індекс за поточним маршрутом.
     int idx = 0;
-    if (location.startsWith('/disciplines')) idx = 1;
-    else if (isCadet && (location.startsWith('/analytics') || location.startsWith('/grades'))) idx = 2;
-    else if (!isCadet && location.startsWith('/journals')) idx = 2;
-    else if (location.startsWith('/profile')) idx = 3;
+    for (int i = 0; i < entries.length; i++) {
+      final p = entries[i].path;
+      if (p.isNotEmpty && location.startsWith(p)) {
+        idx = i;
+        break;
+      }
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -245,27 +289,24 @@ class _BottomNav extends StatelessWidget {
         child: SizedBox(
           height: 62,
           child: Row(
-            children: navItems.asMap().entries.map((e) {
+            children: entries.asMap().entries.map((e) {
               final i = e.key;
-              final item = e.value;
+              final item = e.value.item;
+              final path = e.value.path;
               final isSelected = i == idx;
               return Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     HapticFeedback.selectionClick();
-                    switch (i) {
-                      case 0: context.go('/dashboard'); break;
-                      case 1: context.go('/disciplines'); break;
-                      case 2: context.go(isCadet ? '/analytics' : '/journals'); break;
-                      case 3: context.go('/profile'); break;
-                      case 4:
-                        showModalBottomSheet(
-                          context: context,
-                          backgroundColor: Colors.transparent,
-                          builder: (_) => _MoreMenu(role: role),
-                        );
-                        break;
+                    if (path.isNotEmpty) {
+                      context.go(path);
+                    } else {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => _MoreMenu(role: role),
+                      );
                     }
                   },
                   child: AnimatedContainer(
@@ -301,9 +342,7 @@ class _BottomNav extends StatelessWidget {
                           duration: const Duration(milliseconds: 250),
                           style: TextStyle(
                             fontSize: 10,
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w400,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                             color: isSelected
                                 ? AppTheme.primary
                                 : const Color(0xFF94A3B8),
@@ -327,12 +366,10 @@ class _NavItem {
   final IconData icon;
   final IconData activeIcon;
   final String label;
-  final String path;
   const _NavItem({
     required this.icon,
     required this.activeIcon,
     required this.label,
-    required this.path,
   });
 }
 

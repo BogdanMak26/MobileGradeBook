@@ -47,7 +47,7 @@ class JournalModel {
 
     return JournalModel(
       id: json['journalId'] as int? ?? json['id'] as int? ?? 0,
-      semesterId: firstSem?['semesterId'] as int? ?? json['semesterId'] as int? ?? 0,
+      semesterId: firstSem?['semesterId'] as int? ?? firstSem?['id'] as int? ?? json['semesterId'] as int? ?? 0,
       groupId: json['groupId'] as int? ?? group?['id'] as int? ?? 0,
       groupName: json['groupName'] as String? ?? group?['name'] as String? ?? '',
       disciplineId: json['disciplineId'] as int? ?? discipline?['id'] as int? ?? 0,

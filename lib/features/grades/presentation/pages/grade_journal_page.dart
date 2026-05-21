@@ -56,6 +56,7 @@ class GradeJournalPage extends ConsumerStatefulWidget {
   final String? groupName;
   final String? semesterId;
   final int? groupId;
+  final int? journalId;
   final bool readOnly;
   const GradeJournalPage({
     super.key,
@@ -64,6 +65,7 @@ class GradeJournalPage extends ConsumerStatefulWidget {
     this.groupName,
     this.semesterId,
     this.groupId,
+    this.journalId,
     this.readOnly = false,
   });
 
@@ -87,10 +89,14 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
     super.initState();
     _tab = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.groupId != null) {
+      final vm = ref.read(gradeJournalViewModelProvider.notifier);
+      final jId = widget.journalId;
+      if (jId != null && jId != 0) {
+        vm.loadJournalById(jId);
+      } else if (widget.groupId != null) {
         final discId = int.tryParse(widget.disciplineId) ?? 0;
         final semId = int.tryParse(widget.semesterId ?? '') ?? 0;
-        ref.read(gradeJournalViewModelProvider.notifier).loadJournal(
+        vm.loadJournal(
           groupId: widget.groupId!,
           disciplineId: discId,
           semesterId: semId,

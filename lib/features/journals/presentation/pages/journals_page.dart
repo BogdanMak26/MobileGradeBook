@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/repositories.dart';
 import '../../../../features/disciplines/data/models/discipline_model.dart';
+import '../../../../features/disciplines/data/models/journal_model.dart';
 import '../../../../features/disciplines/data/repositories/disciplines_repository.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/add_discipline_sheet.dart';
@@ -171,8 +172,7 @@ class _CoursesTab extends ConsumerStatefulWidget {
 }
 
 class _CoursesTabState extends ConsumerState<_CoursesTab> {
-  // year → groups
-  Map<int, List<Map<String, dynamic>>> _byYear = {};
+  Map<String, List<Map<String, dynamic>>> _byCourse = {};
   bool _isLoading = true;
   String? _error;
 
@@ -186,19 +186,32 @@ class _CoursesTabState extends ConsumerState<_CoursesTab> {
     setState(() { _isLoading = true; _error = null; });
     try {
       final raw = await ref.read(groupsRepositoryProvider).getGroups();
-      final grouped = <int, List<Map<String, dynamic>>>{};
+      final grouped = <String, List<Map<String, dynamic>>>{};
       for (final item in raw) {
         final g = item as Map<String, dynamic>;
-        final year = g['yearStart'] as int? ??
-            g['enrollmentYear'] as int? ??
-            g['year'] as int? ?? 0;
-        grouped.putIfAbsent(year, () => []).add(g);
+        final course = g['courseNumber'] as int? ?? 0;
+        final degree = (g['educationDegree'] as String?) ?? 'BACHELOR';
+        final key = '${course}_$degree';
+        grouped.putIfAbsent(key, () => []).add(g);
       }
-      // Sort years descending (newest first)
+      // Sort: bachelor (1–4) first, then master (1м, 2м), each ascending by courseNumber
       final sorted = Map.fromEntries(
-        grouped.entries.toList()..sort((a, b) => b.key.compareTo(a.key)),
+        grouped.entries.toList()
+          ..sort((a, b) {
+            final aParts = a.key.split('_');
+            final bParts = b.key.split('_');
+            final aDeg = aParts.sublist(1).join('_');
+            final bDeg = bParts.sublist(1).join('_');
+            final aC = int.tryParse(aParts[0]) ?? 0;
+            final bC = int.tryParse(bParts[0]) ?? 0;
+            if (aDeg != bDeg) {
+              if (aDeg == 'MASTER') return 1;
+              if (bDeg == 'MASTER') return -1;
+            }
+            return aC.compareTo(bC);
+          }),
       );
-      setState(() { _byYear = sorted; _isLoading = false; });
+      setState(() { _byCourse = sorted; _isLoading = false; });
     } catch (e) {
       setState(() { _isLoading = false; _error = e.toString(); });
     }
@@ -206,108 +219,94 @@ class _CoursesTabState extends ConsumerState<_CoursesTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
-            const SizedBox(height: 12),
-            Text(_error!, textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textMid)),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _load, child: const Text('Повторити')),
-          ],
-        ),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+          const SizedBox(height: 12),
+          Text(_error!, textAlign: TextAlign.center,
+              style: const TextStyle(color: AppTheme.textMid)),
+          const SizedBox(height: 16),
+          ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+        ]),
       );
     }
 
-    final entries = _byYear.entries.toList();
+    final entries = _byCourse.entries.toList();
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: entries.length,
       itemBuilder: (context, i) {
-        final year = entries[i].key;
+        final key = entries[i].key;
         final groups = entries[i].value;
-        // Collect unique specialties
-        final specs = groups
-            .map((g) => g['specialty']?.toString() ??
-                g['specialization']?.toString() ?? '')
-            .where((s) => s.isNotEmpty)
-            .toSet()
-            .toList();
-        final courseName = 'Набір $year';
+        final kParts = key.split('_');
+        final courseNum = int.tryParse(kParts[0]) ?? 0;
+        final degree = kParts.sublist(1).join('_');
+        final isMaster = degree == 'MASTER';
+        final courseLabel = isMaster ? '${courseNum}м' : '$courseNum';
+        final courseName = isMaster
+            ? '${courseNum}м курс (Магістр)'
+            : (courseNum > 0 ? '$courseNum курс' : 'Інші групи');
+        final cadetCount = groups.fold<int>(0, (sum, g) {
+          final cadets = g['cadets'] as List?;
+          return sum + (cadets?.length ?? 0);
+        });
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.border),
+        return GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => _GroupsPage(
+                courseNumber: courseNum,
+                courseName: courseName,
+                groups: groups,
+              ),
+            ),
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(children: [
+              Container(
+                width: 52, height: 52,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(courseLabel,
+                      style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary)),
+                ),
+              ),
+              const SizedBox(width: 14),
               Expanded(
-                child: Text(courseName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppTheme.textDark)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(courseName,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppTheme.textDark)),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    _InfoBadge(label: 'Груп', value: '${groups.length}'),
+                    const SizedBox(width: 6),
+                    if (cadetCount > 0)
+                      _InfoBadge(label: 'Курсантів', value: '$cadetCount'),
+                  ]),
+                ]),
               ),
-              const Icon(Icons.people_outline, color: AppTheme.primary),
+              const Icon(Icons.chevron_right, color: AppTheme.textMid),
             ]),
-            if (specs.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Text('Спеціальності:',
-                  style: TextStyle(fontSize: 12, color: AppTheme.textMid)),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6, runSpacing: 6,
-                children: specs.map((s) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Text(s,
-                      style: const TextStyle(fontSize: 11, color: AppTheme.textDark)),
-                )).toList(),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Row(children: [
-              _InfoBadge(label: 'Рік вступу', value: '$year'),
-              const SizedBox(width: 8),
-              _InfoBadge(label: 'Груп', value: '${groups.length}'),
-              const Spacer(),
-              OutlinedButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => _GroupsPage(
-                      yearStart: year,
-                      courseName: courseName,
-                      groups: groups,
-                    ),
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primaryDark,
-                  side: const BorderSide(color: AppTheme.primaryDark),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
-                child: const Text('Переглянути'),
-              ),
-            ]),
-          ]),
+          ),
         );
       },
     );
@@ -317,11 +316,11 @@ class _CoursesTabState extends ConsumerState<_CoursesTab> {
 // ── Список груп курсу ────────────────────────────────────────────────────────
 
 class _GroupsPage extends StatefulWidget {
-  final int yearStart;
+  final int courseNumber;
   final String courseName;
   final List<Map<String, dynamic>> groups;
   const _GroupsPage({
-    required this.yearStart,
+    required this.courseNumber,
     required this.courseName,
     required this.groups,
   });
@@ -332,6 +331,20 @@ class _GroupsPage extends StatefulWidget {
 
 class _GroupsPageState extends State<_GroupsPage> {
   String _search = '';
+
+  static String _degreeLabel(String? raw) => switch (raw) {
+    'BACHELOR' => 'Бакалавр',
+    'MASTER'   => 'Магістр',
+    'JUNIOR_SPECIALIST' => 'Молодший спеціаліст',
+    _ => raw ?? '—',
+  };
+
+  static String _typeLabel(String? raw) => switch (raw) {
+    'FULL_TIME'  => 'Денна',
+    'PART_TIME'  => 'Заочна',
+    'EXTRAMURAL' => 'Екстернат',
+    _ => raw ?? '—',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -362,16 +375,18 @@ class _GroupsPageState extends State<_GroupsPage> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Text('Групи',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+            child: Text(
+              'Групи — ${widget.courseName}',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold, color: AppTheme.textDark),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: TextField(
               onChanged: (v) => setState(() => _search = v),
               decoration: const InputDecoration(
-                hintText: 'Пошук груп за назвою...',
+                hintText: 'Пошук групи за назвою...',
                 prefixIcon: Icon(Icons.search, color: AppTheme.textMid, size: 18),
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
@@ -383,64 +398,80 @@ class _GroupsPageState extends State<_GroupsPage> {
               itemCount: filtered.length,
               itemBuilder: (context, i) {
                 final g = filtered[i];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Text(g['name']?.toString() ?? '—',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                                color: AppTheme.primary)),
-                        const Spacer(),
-                        const Icon(Icons.people_outline, color: AppTheme.primary),
-                      ]),
-                      const SizedBox(height: 10),
-                      _InfoRow(label: 'Спеціальність:', value: g['specialty']?.toString() ?? g['specialization']?.toString() ?? '—'),
-                      const SizedBox(height: 4),
-                      _InfoRow(label: 'Ступінь:', value: g['degree']?.toString() ?? '—'),
-                      const SizedBox(height: 10),
-                      Row(children: [
-                        _InfoBadge(label: 'Рік вступу', value: (g['yearStart'] ?? g['enrollmentYear'] ?? g['year'])?.toString() ?? '—'),
-                        const SizedBox(width: 8),
-                        _InfoBadge(label: 'Тип', value: g['formOfStudy']?.toString() ?? g['type']?.toString() ?? '—'),
-                        const Spacer(),
-                        OutlinedButton(
-                          onPressed: () {
-                            final groupId = g['id'] as int?;
-                            if (groupId == null) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => _GroupDisciplinesPage(
-                                  groupId: groupId,
-                                  groupName: g['name']?.toString() ?? '—',
-                                ),
-                              ),
-                            );
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.primaryDark,
-                            side: const BorderSide(color: AppTheme.primaryDark),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            textStyle: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w500),
-                          ),
-                          child: const Text('Переглянути'),
+                final groupId = g['id'] as int?;
+                final groupName = g['name']?.toString() ?? '—';
+                final cadets = g['cadets'] as List?;
+                final cadetCount = cadets?.length ?? 0;
+                final degree = _degreeLabel(g['educationDegree'] as String?);
+                final type = _typeLabel(g['type'] as String?);
+                final rawEnrollYear = g['enrollmentYear'];
+                final enrollYear = rawEnrollYear is int
+                    ? rawEnrollYear
+                    : int.tryParse(rawEnrollYear?.toString() ?? '');
+
+                return GestureDetector(
+                  onTap: () {
+                    if (groupId == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GroupDisciplinesPage(
+                          groupId: groupId,
+                          groupName: groupName,
                         ),
-                      ]),
-                    ],
+                      ),
+                    );
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 48, height: 48,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.people_outline,
+                            color: AppTheme.primary, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(groupName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 17,
+                                    color: AppTheme.primary)),
+                            const SizedBox(height: 4),
+                            Row(children: [
+                              _InfoBadge(label: 'Ступінь', value: degree),
+                              const SizedBox(width: 6),
+                              _InfoBadge(label: 'Форма', value: type),
+                            ]),
+                            if (enrollYear != null || cadetCount > 0) ...[
+                              const SizedBox(height: 4),
+                              Row(children: [
+                                if (enrollYear != null)
+                                  _InfoBadge(label: 'Набір', value: '$enrollYear'),
+                                if (enrollYear != null && cadetCount > 0)
+                                  const SizedBox(width: 6),
+                                if (cadetCount > 0)
+                                  _InfoBadge(label: 'Курсантів', value: '$cadetCount'),
+                              ]),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, color: AppTheme.textMid),
+                    ]),
                   ),
                 );
               },
@@ -454,18 +485,19 @@ class _GroupsPageState extends State<_GroupsPage> {
 
 // ── Дисципліни конкретної групи ──────────────────────────────────────────────
 
-class _GroupDisciplinesPage extends ConsumerStatefulWidget {
+class GroupDisciplinesPage extends ConsumerStatefulWidget {
   final int groupId;
   final String groupName;
-  const _GroupDisciplinesPage({required this.groupId, required this.groupName});
+  const GroupDisciplinesPage({super.key, required this.groupId, required this.groupName});
 
   @override
-  ConsumerState<_GroupDisciplinesPage> createState() => _GroupDisciplinesPageState();
+  ConsumerState<GroupDisciplinesPage> createState() => _GroupDisciplinesPageState();
 }
 
-class _GroupDisciplinesPageState extends ConsumerState<_GroupDisciplinesPage> {
+class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
   String _search = '';
-  List<Map<String, dynamic>> _journals = [];
+  List<JournalModel> _journals = [];
+  Map<String, int> _discIdByName = {};
   bool _isLoading = true;
   String? _error;
 
@@ -478,9 +510,19 @@ class _GroupDisciplinesPageState extends ConsumerState<_GroupDisciplinesPage> {
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
     try {
-      final raw = await ref.read(journalsRepositoryProvider).getJournals(groupId: widget.groupId);
+      final repo = ref.read(disciplinesRepositoryProvider);
+      final journalsFuture = repo.getGroupJournals(widget.groupId);
+      final discsFuture = repo.getAllDisciplines();
+      final journals = await journalsFuture;
+      final allDiscs = await discsFuture;
+      final map = <String, int>{};
+      for (final d in allDiscs) {
+        map[d.fullName] = d.id;
+        if (d.shortName != null && d.shortName!.isNotEmpty) map[d.shortName!] = d.id;
+      }
       setState(() {
-        _journals = raw.map((e) => e as Map<String, dynamic>).toList();
+        _journals = journals;
+        _discIdByName = map;
         _isLoading = false;
       });
     } catch (e) {
@@ -488,244 +530,22 @@ class _GroupDisciplinesPageState extends ConsumerState<_GroupDisciplinesPage> {
     }
   }
 
-  void _showCreateJournalForGroupDialog(BuildContext context) {
-    // Унікальні дисципліни з журналів
-    final seen = <int>{};
-    final groupDisciplines = <Map<String, dynamic>>[];
-    for (final j in _journals) {
-      final dId = j['disciplineId'] as int? ?? 0;
-      if (seen.add(dId)) {
-        groupDisciplines.add({'id': dId, 'name': j['disciplineName'] ?? '', 'short': j['disciplineName'] ?? ''});
-      }
+  bool _isActive(JournalModel j) {
+    final endStr = j.endDate;
+    if (endStr == null || endStr.isEmpty) return true;
+    try {
+      final end = DateTime.parse(endStr);
+      final today = DateTime.now();
+      return !end.isBefore(DateTime(today.year, today.month, today.day));
+    } catch (_) {
+      return true;
     }
-
-    // 8 семестрів (4 роки) — загальна форма
-    final semesters = <String>[];
-    for (int i = 0; i < 8; i++) {
-      semesters.add('Семестр ${i + 1}');
-    }
-    final semSelected = List<bool>.filled(semesters.length, false);
-
-    Map<String, dynamic>? selectedDisc;
-
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Заголовок
-                Row(children: [
-                  const Expanded(
-                    child: Text('Створити новий журнал',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 17,
-                            color: AppTheme.textDark)),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ]),
-                const Divider(height: 20),
-
-                // Група (фіксована)
-                const Text('Група',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textMid)),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppTheme.border),
-                    borderRadius: BorderRadius.circular(8),
-                    color: AppTheme.surface,
-                  ),
-                  child: Row(children: [
-                    Expanded(
-                      child: Text(
-                        '${widget.groupName} навчальна група',
-                        style: const TextStyle(
-                            fontSize: 13, color: AppTheme.textDark),
-                      ),
-                    ),
-                    const Icon(Icons.lock_outline,
-                        color: AppTheme.textLight, size: 16),
-                  ]),
-                ),
-                const SizedBox(height: 14),
-
-                // Дисципліна
-                const Text('Дисципліна *',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textMid)),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                        color: selectedDisc == null
-                            ? AppTheme.border
-                            : AppTheme.primary),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: DropdownButton<Map<String, dynamic>>(
-                    value: selectedDisc,
-                    isExpanded: true,
-                    underline: const SizedBox(),
-                    hint: const Text('Оберіть дисципліну',
-                        style: TextStyle(
-                            fontSize: 13, color: AppTheme.textMid)),
-                    items: groupDisciplines
-                        .map((d) => DropdownMenuItem(
-                              value: d,
-                              child: Text(
-                                '${d['short']} — ${d['name']}',
-                                style: const TextStyle(fontSize: 13),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (val) =>
-                        setDialogState(() => selectedDisc = val),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // Семестри
-                const Text('Семестри',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.textMid)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color:
-                            const Color(0xFFFBBF24).withOpacity(0.4)),
-                  ),
-                  child: const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('⚠️ ', style: TextStyle(fontSize: 13)),
-                      Expanded(
-                        child: Text(
-                          'Якщо дисципліна продовжується в іншому семестрі та закінчується заліком у іншому — обирайте відповідні семестри.',
-                          style: TextStyle(
-                              fontSize: 12, color: AppTheme.textDark),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 180),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppTheme.border),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: semesters.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1),
-                      itemBuilder: (_, i) => CheckboxListTile(
-                        dense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12),
-                        title: Text(semesters[i],
-                            style: const TextStyle(fontSize: 13)),
-                        value: semSelected[i],
-                        onChanged: (val) => setDialogState(
-                            () => semSelected[i] = val ?? false),
-                        controlAffinity:
-                            ListTileControlAffinity.leading,
-                        activeColor: AppTheme.primary,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-                Row(children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF374151),
-                        foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: const Text('Скасувати'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: selectedDisc != null
-                          ? () {
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(SnackBar(
-                                content: const Text('Журнал створено'),
-                                backgroundColor:
-                                    const Color(0xFF16A34A),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(10)),
-                              ));
-                            }
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: AppTheme.border,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: const Text('Створити журнал'),
-                    ),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final filtered = _journals
-        .where((d) =>
-            (d['disciplineName'] ?? '').toString().toLowerCase().contains(_search.toLowerCase()))
+        .where((j) => j.disciplineName.toLowerCase().contains(_search.toLowerCase()))
         .toList();
 
     return Scaffold(
@@ -759,90 +579,69 @@ class _GroupDisciplinesPageState extends ConsumerState<_GroupDisciplinesPage> {
           TextButton.icon(
             onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.chevron_left, size: 18),
-            label: const Text('Назад'),
+            label: const Text('До списку груп'),
             style: TextButton.styleFrom(
               foregroundColor: AppTheme.textMid,
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Дисципліни групи ${widget.groupName}',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textDark)),
-              ],
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Text('Дисципліни — ${widget.groupName}',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold, color: AppTheme.textDark)),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  onChanged: (v) => setState(() => _search = v),
-                  decoration: const InputDecoration(
-                    hintText: 'Пошук дисциплін...',
-                    prefixIcon: Icon(Icons.search,
-                        color: AppTheme.textMid, size: 18),
-                    contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                  ),
-                ),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Text('Журналів: ${_journals.length}',
+                style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              onChanged: (v) => setState(() => _search = v),
+              decoration: const InputDecoration(
+                hintText: 'Пошук за дисципліною...',
+                prefixIcon: Icon(Icons.search, color: AppTheme.textMid, size: 18),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.tune, color: Colors.white, size: 18),
-              ),
-            ]),
+            ),
           ),
           Expanded(
             child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: filtered.length + 2,
+                    itemCount: filtered.length + 1,
                     itemBuilder: (context, i) {
                       if (i == filtered.length) {
-                        return _CreateJournalCard(
-                          onTap: () =>
-                              _showCreateJournalForGroupDialog(context),
+                        return _AddDisciplineCard(
+                          onTap: () => showAddDisciplineSheet(
+                            context,
+                            onCreated: _load,
+                          ),
                         );
                       }
-                      if (i == filtered.length + 1) {
-                        return const _AddDisciplineCard();
+                      final j = filtered[i];
+                      final jGroupId = j.groupId != 0 ? j.groupId : widget.groupId;
+                      final jSemesterId = j.semesterId != 0 ? j.semesterId : null;
+                      final jDisciplineId = j.disciplineId != 0
+                          ? j.disciplineId
+                          : (_discIdByName[j.disciplineName] ?? 0);
+                      final isArchived = !_isActive(j);
+
+                      String semLabel = 'Семестр: ${j.semester == 0 ? '—' : j.semester}';
+                      if (j.startDate != null || j.endDate != null) {
+                        semLabel += ' (${j.startDate ?? '?'} - ${j.endDate ?? '?'})';
                       }
-                      final d = filtered[i];
-                      // API returns nested semesters array and journalId (not id)
-                      final dSemesters = d['semesters'] as List<dynamic>?;
-                      final dFirstSem = dSemesters?.isNotEmpty == true
-                          ? dSemesters!.first as Map<String, dynamic>?
-                          : null;
-                      final dSemNum = dFirstSem?['semesterNumber'] as int?
-                          ?? d['semester'] as int?;
-                      final dJournalId = d['journalId'] as int? ?? d['id'] as int?;
-                      final dGroupId = d['groupId'] as int?;
-                      final dDisciplineId = d['disciplineId'] as int?;
-                      final dSemesterId = dFirstSem?['semesterId'] as int?;
-                      final dDiscName = d['disciplineFullName']?.toString()
-                          ?? d['disciplineName']?.toString() ?? '—';
-                      final dDiscShort = d['disciplineShortName']?.toString();
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: isArchived ? const Color(0xFFF9FAFB) : Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.border),
-                          boxShadow: [BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 6, offset: const Offset(0, 2),
-                          )],
+                          border: Border.all(
+                            color: isArchived ? const Color(0xFFE5E7EB) : AppTheme.border,
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -852,57 +651,72 @@ class _GroupDisciplinesPageState extends ConsumerState<_GroupDisciplinesPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Семестр ${dSemNum ?? '—'}',
-                                        style: const TextStyle(
+                                    Text(semLabel,
+                                        style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
-                                            color: AppTheme.primary)),
+                                            color: isArchived
+                                                ? AppTheme.textMid
+                                                : AppTheme.primary)),
                                     const SizedBox(height: 2),
-                                    Text(dDiscName,
-                                        style: const TextStyle(
+                                    Text(j.disciplineName,
+                                        style: TextStyle(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 15,
-                                            color: AppTheme.textDark)),
+                                            color: isArchived
+                                                ? AppTheme.textMid
+                                                : AppTheme.textDark)),
                                   ],
                                 ),
                               ),
-                              const Icon(Icons.school,
-                                  color: AppTheme.primary, size: 22),
+                              if (isArchived)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFE4E6),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                                  ),
+                                  child: const Text('АРХІВНИЙ',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFFB91C1C),
+                                          letterSpacing: 0.5)),
+                                )
+                              else
+                                const Icon(Icons.school, color: AppTheme.primary, size: 22),
                             ]),
                             const SizedBox(height: 12),
-                            Row(children: [
-                              _InfoBadge(
-                                  label: 'ID журналу',
-                                  value: '${dJournalId ?? '—'}'),
-                              const Spacer(),
-                              OutlinedButton(
-                                onPressed: (dGroupId == null || dDisciplineId == null || dSemesterId == null) ? null : () => Navigator.push(
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: ElevatedButton(
+                                onPressed: (jSemesterId == null || jDisciplineId == 0) ? null : () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => GradeJournalPage(
-                                      groupId: dGroupId,
-                                      disciplineId: dDisciplineId.toString(),
-                                      semesterId: dSemesterId.toString(),
-                                      disciplineShortName: dDiscShort ?? dDiscName,
-                                      groupName: d['groupName']?.toString()
-                                          ?? '${widget.groupName} навчальна група',
+                                      groupId: jGroupId,
+                                      disciplineId: jDisciplineId.toString(),
+                                      semesterId: jSemesterId.toString(),
+                                      disciplineShortName: j.disciplineName,
+                                      groupName: '${widget.groupName} навчальна група',
                                     ),
                                   ),
                                 ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppTheme.primaryDark,
-                                  side: const BorderSide(color: AppTheme.primaryDark),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isArchived
+                                      ? const Color(0xFF6B7280)
+                                      : AppTheme.primary,
+                                  foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 6),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      horizontal: 20, vertical: 8),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
                                 ),
-                                child: const Text('Переглянути',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500)),
+                                child: const Text('Журнал'),
                               ),
-                            ]),
+                            ),
                           ],
                         ),
                       );
@@ -946,7 +760,7 @@ class _KafedraDisciplinesPageState
     try {
       final raw = await ref
           .read(disciplinesRepositoryProvider)
-          .getAllDisciplines();
+          .getAllDisciplines(kafedraId: widget.kafedraId);
       setState(() {
         _disciplines = raw
             .where((d) => d.kafedraId == widget.kafedraId)
@@ -973,6 +787,31 @@ class _KafedraDisciplinesPageState
       );
     }
 
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Електронний журнал'),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(3),
+            child: Container(height: 3, color: AppTheme.primary),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+              const SizedBox(height: 12),
+              Text(_error!, textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppTheme.textMid)),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+            ],
+          ),
+        ),
+      );
+    }
+
     final filtered = _disciplines
         .where((d) =>
             d.fullName.toLowerCase().contains(_search.toLowerCase()) ||
@@ -992,10 +831,18 @@ class _KafedraDisciplinesPageState
           TextButton.icon(
             onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.chevron_left, size: 18),
-            label: const Text('Назад'),
+            label: const Text('До списку кафедр'),
             style: TextButton.styleFrom(
               foregroundColor: AppTheme.textMid,
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text(
+              'Дисципліни — ${widget.kafedraName}',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold, color: AppTheme.textDark),
             ),
           ),
           Padding(
@@ -1076,9 +923,10 @@ class _DisciplineJournalListPage extends ConsumerStatefulWidget {
 class _DisciplineJournalListPageState
     extends ConsumerState<_DisciplineJournalListPage> {
   String _search = '';
-  List<Map<String, dynamic>> _journals = [];
+  List<JournalModel> _journals = [];
   bool _isLoading = true;
   String? _error;
+  bool _currentOnly = false;
 
   @override
   void initState() {
@@ -1089,10 +937,11 @@ class _DisciplineJournalListPageState
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
     try {
-      final raw = await ref.read(journalsRepositoryProvider)
-          .getJournals(disciplineId: widget.disciplineId);
+      // discipline_id (snake_case) — єдиний параметр який сервер розуміє
+      final journals = await ref.read(disciplinesRepositoryProvider)
+          .getDisciplineJournals(widget.disciplineId);
       setState(() {
-        _journals = raw.map((e) => e as Map<String, dynamic>).toList();
+        _journals = journals;
         _isLoading = false;
       });
     } catch (e) {
@@ -1100,11 +949,24 @@ class _DisciplineJournalListPageState
     }
   }
 
+  bool _isActive(JournalModel j) {
+    final endStr = j.endDate;
+    if (endStr == null || endStr.isEmpty) return true;
+    try {
+      final end = DateTime.parse(endStr);
+      final today = DateTime.now();
+      return !end.isBefore(DateTime(today.year, today.month, today.day));
+    } catch (_) {
+      return true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final activeCount = _journals.where(_isActive).length;
     final filtered = _journals
-        .where((j) => (j['groupName'] ?? '').toString().toLowerCase()
-            .contains(_search.toLowerCase()))
+        .where((j) => !_currentOnly || _isActive(j))
+        .where((j) => j.groupName.toLowerCase().contains(_search.toLowerCase()))
         .toList();
 
     return Scaffold(
@@ -1117,25 +979,61 @@ class _DisciplineJournalListPageState
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                      const SizedBox(height: 12),
+                      Text('Помилка: $_error',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: AppTheme.textMid)),
+                      const SizedBox(height: 16),
+                      ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+                    ],
+                  ),
+                )
+              : Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextButton.icon(
             onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.chevron_left, size: 18),
-            label: const Text('Назад'),
+            label: const Text('До списку дисциплін'),
             style: TextButton.styleFrom(
               foregroundColor: AppTheme.textMid,
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Text(
-              'Журнали - ${widget.disciplineName}',
+              'Журнали — ${widget.disciplineName}',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold, color: AppTheme.textDark),
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 16, 4),
+            child: Row(children: [
+              Checkbox(
+                value: _currentOnly,
+                onChanged: (v) => setState(() => _currentOnly = v ?? false),
+                activeColor: AppTheme.primary,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _currentOnly = !_currentOnly),
+                  child: Text(
+                    'Показувати поточні семестри  ($activeCount з ${_journals.length} журналів)',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textDark),
+                  ),
+                ),
+              ),
+            ]),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -1166,43 +1064,65 @@ class _DisciplineJournalListPageState
                   );
                 }
                 final j = filtered[i];
-                final jSemesters = j['semesters'] as List<dynamic>?;
-                final jFirstSem = jSemesters?.isNotEmpty == true
-                    ? jSemesters!.first as Map<String, dynamic>?
-                    : null;
-                final jSemNum = jFirstSem?['semesterNumber'] as int?
-                    ?? j['semester'] as int?;
-                final jGroupId = j['groupId'] as int?;
-                final jSemesterId = jFirstSem?['semesterId'] as int?;
+                final jGroupId = j.groupId != 0 ? j.groupId : null;
+                final jSemesterId = j.semesterId != 0 ? j.semesterId : null;
+                final jDisciplineId = j.disciplineId != 0 ? j.disciplineId : widget.disciplineId;
+                final isArchived = !_isActive(j);
+
+                String semesterLabel = 'Семестр: ${j.semester == 0 ? '—' : j.semester}';
+                if (j.startDate != null || j.endDate != null) {
+                  semesterLabel += ' (${j.startDate ?? '?'} - ${j.endDate ?? '?'}';
+                  if (j.academicYear != null) semesterLabel += ' | ${j.academicYear}';
+                  semesterLabel += ')';
+                }
+
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: isArchived ? const Color(0xFFF9FAFB) : Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.border),
+                    border: Border.all(
+                      color: isArchived ? const Color(0xFFE5E7EB) : AppTheme.border,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        const Icon(Icons.menu_book_outlined,
-                            color: AppTheme.primary, size: 18),
+                        Icon(Icons.menu_book_outlined,
+                            color: isArchived ? AppTheme.textMid : AppTheme.primary,
+                            size: 18),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '${j['groupName'] ?? '—'} навчальна група',
-                            style: const TextStyle(
+                            '${j.groupName} навчальна група',
+                            style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
-                                color: AppTheme.textDark),
+                                color: isArchived ? AppTheme.textMid : AppTheme.textDark),
                           ),
                         ),
+                        if (isArchived)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFE4E6),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: const Color(0xFFFCA5A5)),
+                            ),
+                            child: const Text('АРХІВНИЙ',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFB91C1C),
+                                    letterSpacing: 0.5)),
+                          ),
                       ]),
                       const SizedBox(height: 4),
-                      Text('Семестр: ${jSemNum ?? '—'}',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppTheme.textMid)),
+                      Text(semesterLabel,
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
                       const SizedBox(height: 12),
                       Align(
                         alignment: Alignment.centerRight,
@@ -1212,15 +1132,17 @@ class _DisciplineJournalListPageState
                             MaterialPageRoute(
                               builder: (_) => GradeJournalPage(
                                 groupId: jGroupId,
-                                disciplineId: widget.disciplineId.toString(),
+                                disciplineId: jDisciplineId.toString(),
                                 semesterId: jSemesterId.toString(),
                                 disciplineShortName: widget.disciplineName,
-                                groupName: '${j['groupName'] ?? ''} навчальна група',
+                                groupName: '${j.groupName} навчальна група',
                               ),
                             ),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
+                            backgroundColor: isArchived
+                                ? const Color(0xFF6B7280)
+                                : AppTheme.primary,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 20, vertical: 8),
@@ -1403,25 +1325,3 @@ class _CreateJournalCard extends StatelessWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _InfoRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(children: [
-      Text(label,
-          style: const TextStyle(fontSize: 13, color: AppTheme.textMid)),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Text(value,
-            style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppTheme.textDark),
-            overflow: TextOverflow.ellipsis),
-      ),
-    ]);
-  }
-}
