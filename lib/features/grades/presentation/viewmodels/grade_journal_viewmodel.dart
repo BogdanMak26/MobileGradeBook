@@ -3,6 +3,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/repositories.dart';
 import '../../../../core/local/local_cache.dart';
+import '../../../../core/local/offline_queue.dart';
 import '../../../../core/network/network_monitor.dart';
 import '../../../../core/utils/military_labels.dart';
 import '../../data/models/grade_model.dart';
@@ -53,8 +54,14 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
   final AttendsRepository _attendsRepo;
   final LocalCache _cache;
   final NetworkMonitor _network;
+  final OfflineQueueNotifier _queue;
 
-  GradeJournalViewModel(this._repo, this._attendsRepo, this._cache, this._network)
+  // Runtime cache for markIds created during this session (cadetId → lessonId → markId)
+  final Map<int, Map<int, int>> _markIds = {};
+  // Runtime cache for attendIds created during this session (cadetId → lessonId → attendId)
+  final Map<int, Map<int, int>> _attendIds = {};
+
+  GradeJournalViewModel(this._repo, this._attendsRepo, this._cache, this._network, this._queue)
       : super(const JournalState());
 
   // ── Журнал оцінок ─────────────────────────────────────────────────────────
@@ -72,11 +79,12 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     }
 
     try {
-      final journal = await _repo.getJournal(
+      final raw = await _repo.getJournal(
         groupId: groupId,
         disciplineId: disciplineId,
         semesterId: semesterId,
       );
+      final journal = await _mergeMarkData(raw);
       state = state.copyWith(isLoading: false, journal: journal);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -92,10 +100,47 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
       return;
     }
     try {
-      final journal = await _repo.getJournalById(journalId);
+      final raw = await _repo.getJournalById(journalId);
+      final journal = await _mergeMarkData(raw);
       state = state.copyWith(isLoading: false, journal: journal);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  // ── Завантаження marks з детального списку занять ────────────────────────
+  // Оновлює _markIds і повертає журнал з заповненим gradesByLessonId
+  Future<GradeJournalResponse> _mergeMarkData(GradeJournalResponse journal) async {
+    try {
+      final data = await _repo.getLessonMarkData(journal.journalId);
+
+      for (final cadetEntry in data.entries) {
+        (_markIds[cadetEntry.key] ??= {})
+            .addAll(cadetEntry.value.map((k, v) => MapEntry(k, v.$1)));
+      }
+
+      final updatedCadets = journal.cadets.map((cadet) {
+        final cadetData = data[cadet.id];
+        if (cadetData == null) return cadet;
+        final grades = Map<int, double?>.from(cadet.gradesByLessonId);
+        cadetData.forEach((lessonId, rec) => grades[lessonId] = rec.$2);
+        return JournalCadet(
+          id: cadet.id,
+          fullName: cadet.fullName,
+          gradesByLessonId: grades,
+          statusByLessonId: cadet.statusByLessonId,
+          markIdByLessonId: cadet.markIdByLessonId,
+          attendIdByLessonId: cadet.attendIdByLessonId,
+        );
+      }).toList();
+
+      return GradeJournalResponse(
+        journalId: journal.journalId,
+        cadets: updatedCadets,
+        lessons: journal.lessons,
+      );
+    } catch (_) {
+      return journal;
     }
   }
 
@@ -187,47 +232,207 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     }
   }
 
-  // ── Збереження відвідуваності (batch) ──────────────────────────────────────
-  // attendance: {cadetFullName: [code per lesson index]} — same structure as page state.
-  // teacherId: used to associate the attend record with a teacher.
+  // ── Збереження оцінки (create / update / delete) ─────────────────────────
+
+  Future<void> saveGrade({
+    required String cadetName,
+    required int lessonIdx,
+    required double? value,
+    required int teacherId,
+  }) async {
+    final journal = state.journal;
+    if (journal == null || lessonIdx >= journal.lessons.length) return;
+
+    final lesson = journal.lessons[lessonIdx];
+    final lessonId = lesson.id;
+    final subLessonId = lesson.subLessonId;
+
+    JournalCadet cadet;
+    try {
+      cadet = journal.cadets.firstWhere((c) => c.fullName == cadetName);
+    } catch (_) {
+      return;
+    }
+    final cadetId = cadet.id;
+
+    final existingMarkId = _markIds[cadetId]?[lessonId]
+        ?? cadet.markIdByLessonId[lessonId];
+
+    try {
+      if (value == null) {
+        if (existingMarkId == null) return;
+        if (!_network.isOnline) {
+          await _queue.enqueue(PendingOp(
+            id: 'mark_del_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
+            method: 'DELETE',
+            path: '/marks/$existingMarkId',
+            data: {},
+            createdAt: DateTime.now(),
+          ));
+          (_markIds[cadetId] ??= {}).remove(lessonId);
+          return;
+        }
+        await _repo.deleteMark(existingMarkId);
+        (_markIds[cadetId] ??= {}).remove(lessonId);
+      } else if (existingMarkId != null) {
+        if (!_network.isOnline) {
+          await _queue.enqueue(PendingOp(
+            id: 'mark_upd_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
+            method: 'PATCH',
+            path: '/marks/$existingMarkId',
+            data: {'markValue': value},
+            createdAt: DateTime.now(),
+          ));
+          return;
+        }
+        await _repo.updateMark(existingMarkId, value);
+      } else {
+        if (subLessonId == null) {
+          state = state.copyWith(error: 'Немає підзаняття для заняття $lessonId');
+          return;
+        }
+        if (!_network.isOnline) {
+          await _queue.enqueue(PendingOp(
+            id: 'mark_new_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
+            method: 'POST',
+            path: '/marks',
+            data: {
+              'cadetId': cadetId,
+              'subLessonId': subLessonId,
+              'teacherId': teacherId,
+              'value': value,
+              'type': 'PRACTICAL',
+            },
+            createdAt: DateTime.now(),
+          ));
+          return;
+        }
+        final result = await _repo.createMark(
+          cadetId: cadetId,
+          subLessonId: subLessonId,
+          teacherId: teacherId,
+          value: value,
+        );
+        final newMarkId = result['id'] as int? ?? result['markId'] as int?;
+        if (newMarkId != null) {
+          (_markIds[cadetId] ??= {})[lessonId] = newMarkId;
+        }
+      }
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
+  // ── Збереження відвідуваності (create / update / delete) ──────────────────
   Future<void> saveAttendances({
     required Map<String, List<String?>> attendance,
     required int teacherId,
   }) async {
     final journal = state.journal;
     if (journal == null) return;
-    if (!_network.isOnline) {
-      state = state.copyWith(error: "Немає з'єднання. Спробуйте при підключенні.");
-      return;
-    }
 
-    state = state.copyWith(isSyncing: true, syncMessage: null);
+    final toCreate = <Map<String, dynamic>>[];          // POST /attends/batch
+    final toUpdate = <Map<String, dynamic>>[];          // PATCH /attends/{id}
+    final toDelete = <int>[];                           // DELETE /attends/{id}
 
-    final attends = <Map<String, dynamic>>[];
     for (final cadet in journal.cadets) {
       final cadetAtt = attendance[cadet.fullName];
       if (cadetAtt == null) continue;
+
       for (int i = 0; i < journal.lessons.length && i < cadetAtt.length; i++) {
-        final serverEnum = MilitaryLabels.attendEnum(cadetAtt[i]);
-        if (serverEnum != null) {
-          attends.add({
+        final lessonId = journal.lessons[i].id;
+        final currentCode = cadetAtt[i];
+
+        // 'П' (present) treated same as null — means "no attendance record"
+        final currentEnum = MilitaryLabels.attendEnum(currentCode);
+        final originalCode = cadet.statusByLessonId[lessonId];
+
+        // Skip if nothing changed
+        if (currentCode == originalCode) continue;
+        if (currentEnum == null && originalCode == null) continue;
+
+        final attendId = _attendIds[cadet.id]?[lessonId]
+            ?? cadet.attendIdByLessonId[lessonId];
+
+        if (currentEnum == null && attendId != null) {
+          // Record existed, user cleared it → DELETE
+          toDelete.add(attendId);
+        } else if (currentEnum != null && attendId == null) {
+          // New record → CREATE
+          toCreate.add({
             'cadetId': cadet.id,
-            'lessonId': journal.lessons[i].id,
+            'lessonId': lessonId,
             'teacherId': teacherId,
-            'attended': serverEnum,
+            'attended': currentEnum,
           });
+        } else if (currentEnum != null && attendId != null) {
+          // Record existed, user changed value → UPDATE
+          final originalEnum = MilitaryLabels.attendEnum(originalCode);
+          if (currentEnum != originalEnum) {
+            toUpdate.add({'attendId': attendId, 'attended': currentEnum});
+          }
         }
       }
     }
 
-    if (attends.isEmpty) {
+    final total = toCreate.length + toUpdate.length + toDelete.length;
+    if (total == 0) {
       state = state.copyWith(isSyncing: false, syncMessage: '✓ Без змін');
       return;
     }
 
+    if (!_network.isOnline) {
+      for (final rec in toCreate) {
+        await _queue.enqueue(PendingOp(
+          id: 'att_new_${rec['cadetId']}_${rec['lessonId']}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'POST', path: '/attends', data: rec, createdAt: DateTime.now(),
+        ));
+      }
+      for (final rec in toUpdate) {
+        await _queue.enqueue(PendingOp(
+          id: 'att_upd_${rec['attendId']}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'PATCH', path: '/attends/${rec['attendId']}',
+          data: {'attended': rec['attended']}, createdAt: DateTime.now(),
+        ));
+      }
+      for (final aId in toDelete) {
+        await _queue.enqueue(PendingOp(
+          id: 'att_del_${aId}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'DELETE', path: '/attends/$aId', data: {}, createdAt: DateTime.now(),
+        ));
+      }
+      state = state.copyWith(
+        isSyncing: false,
+        syncMessage: '📥 Збережено офлайн ($total записів)',
+      );
+      return;
+    }
+
+    state = state.copyWith(isSyncing: true, syncMessage: null);
     try {
-      await _attendsRepo.batchAttends(attends);
-      state = state.copyWith(isSyncing: false, syncMessage: '✓ Відвідуваність збережено');
+      for (final rec in toCreate) {
+        final created = await _attendsRepo.createAttend(rec);
+        final aId = created['id'] as int? ?? created['attendId'] as int?;
+        final cId = rec['cadetId'] as int?;
+        final lId = rec['lessonId'] as int?;
+        if (aId != null && cId != null && lId != null) {
+          (_attendIds[cId] ??= {})[lId] = aId;
+        }
+      }
+      for (final rec in toUpdate) {
+        await _attendsRepo.updateAttend(
+          rec['attendId'] as int,
+          {'attended': rec['attended']},
+        );
+      }
+      for (final aId in toDelete) {
+        await _attendsRepo.deleteAttend(aId);
+        // Remove from session cache
+        for (final lessonMap in _attendIds.values) {
+          lessonMap.removeWhere((_, v) => v == aId);
+        }
+      }
+      state = state.copyWith(isSyncing: false, syncMessage: '✓ Відвідуваність збережено ($total)');
     } catch (e) {
       state = state.copyWith(isSyncing: false, error: e.toString());
     }
@@ -243,5 +448,6 @@ final gradeJournalViewModelProvider =
     ref.read(attendsRepositoryProvider),
     ref.read(localCacheProvider),
     ref.read(networkMonitorProvider),
+    ref.read(offlineQueueProvider.notifier),
   );
 });

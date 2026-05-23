@@ -40,6 +40,9 @@ class _AuthInterceptor extends Interceptor {
     } else {
       print('[API] ${options.method} ${options.uri} — ⚠️ токен відсутній!');
     }
+    if (options.data != null) {
+      print('[API] REQUEST body: ${options.data}');
+    }
     handler.next(options);
   }
 

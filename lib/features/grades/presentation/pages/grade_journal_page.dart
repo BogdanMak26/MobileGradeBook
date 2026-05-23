@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/sync_status_chip.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../viewmodels/grade_journal_viewmodel.dart';
 
@@ -14,7 +15,11 @@ String _lessonTypeKey(String type) {
     case 'LECTURE':           return 'ЛЕКЦІЯ';
     case 'GROUP_WORK':        return 'ГРУПОВЕ ЗАНЯТТЯ';
     case 'PRACTICAL_WORK':    return 'ПРАКТИЧНЕ ЗАНЯТТЯ';
-    case 'LAB_WORK':          return 'ЛАБОРАТОРНА';
+    case 'LAB_WORK':
+    case 'LABORATORY_WORK':   return 'ЛАБОРАТОРНА';
+    case 'SEMINAR':           return 'СЕМІНАР';
+    case 'EXAMINATION':       return 'ІСПИТ';
+    case 'TEST_EXAMINATION':  return 'ЗАЛІК';
     default:                  return type.toUpperCase();
   }
 }
@@ -25,9 +30,22 @@ String _lessonTypeLabel(String type) {
     case 'ГРУПОВЕ ЗАНЯТТЯ':    return 'Групове';
     case 'ПРАКТИЧНЕ ЗАНЯТТЯ':  return 'Практичне';
     case 'ЛАБОРАТОРНА':        return 'Лабораторна';
+    case 'СЕМІНАР':            return 'Семінар';
+    case 'ІСПИТ':              return 'Іспит';
+    case 'ЗАЛІК':              return 'Залік';
     default:                   return type;
   }
 }
+
+const _lessonTypes = <String, String>{
+  'LECTURE':          'Лекція',
+  'PRACTICAL_WORK':   'Практичне заняття',
+  'GROUP_WORK':       'Групове заняття',
+  'LABORATORY_WORK':  'Лабораторна робота',
+  'SEMINAR':          'Семінар',
+  'EXAMINATION':      'Іспит',
+  'TEST_EXAMINATION': 'Залік',
+};
 
 // "2026-01-07" → "07.01.26"
 String _fmtDate(String iso) {
@@ -80,6 +98,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
   Map<String, List<double?>> _scores = const {};
   Map<String, List<String?>> _attendance = const {};
   bool _dataFromApi = false;
+  int _journalId = 0;
 
   double get _maxTotalScore =>
       _lessons.fold(0.0, (s, l) => s + ((l['maxScore'] as double?) ?? 0.0));
@@ -110,6 +129,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
     if (journal == null || _dataFromApi) return;
     setState(() {
       _dataFromApi = true;
+      _journalId = journal.journalId;
       _lessons = journal.lessons.map((l) => <String, dynamic>{
         'code': l.code,
         'type': l.type,
@@ -117,6 +137,8 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
         'topic': l.topic,
         'maxScore': l.maxScore > 0 ? l.maxScore : null,
         'id': l.id,
+        'pair': l.pair,
+        'room': l.room,
       }).toList();
       _scores = {
         for (final c in journal.cadets)
@@ -131,6 +153,12 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
               .toList()
       };
     });
+  }
+
+  void _triggerReload() {
+    if (_journalId == 0) return;
+    setState(() => _dataFromApi = false);
+    ref.read(gradeJournalViewModelProvider.notifier).loadJournalById(_journalId);
   }
 
   @override
@@ -201,20 +229,6 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
             tooltip: 'Оновити',
             padding: const EdgeInsets.all(8),
           ),
-          if (canEdit)
-            IconButton(
-              icon: const Icon(Icons.save_outlined, size: 20),
-              tooltip: 'Зберегти відвідуваність',
-              padding: const EdgeInsets.all(8),
-              onPressed: () {
-                final authState = ref.read(authViewModelProvider);
-                final teacherId = int.tryParse(authState.userId ?? '') ?? 0;
-                ref.read(gradeJournalViewModelProvider.notifier).saveAttendances(
-                  attendance: _attendance,
-                  teacherId: teacherId,
-                );
-              },
-            ),
           if (!widget.readOnly)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert_rounded, size: 22),
@@ -250,6 +264,15 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
             children: [
               Container(
                 color: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: Row(
+                  children: [
+                    const SyncStatusChip(),
+                  ],
+                ),
+              ),
+              Container(
+                color: Colors.white,
                 child: TabBar(
                   controller: _tab,
                   indicatorColor: AppTheme.primary,
@@ -282,14 +305,32 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                                     scores: _scores,
                                     attendance: _attendance,
                                     canEdit: canEdit,
-                                    onScoreChanged: (name, idx, v) =>
-                                        setState(() => _scores[name]![idx] = v),
-                                    onAttendanceChanged: (name, idx, code) =>
-                                        setState(() => _attendance[name]![idx] = code),
+                                    onScoreChanged: (name, idx, v) {
+                                      setState(() => _scores[name]![idx] = v);
+                                      final teacherId = int.tryParse(
+                                          ref.read(authViewModelProvider).userId ?? '') ?? 0;
+                                      ref.read(gradeJournalViewModelProvider.notifier).saveGrade(
+                                        cadetName: name,
+                                        lessonIdx: idx,
+                                        value: v,
+                                        teacherId: teacherId,
+                                      );
+                                    },
+                                    onAttendanceChanged: (name, idx, code) {
+                                      setState(() => _attendance[name]![idx] = code);
+                                      final teacherId = int.tryParse(
+                                          ref.read(authViewModelProvider).userId ?? '') ?? 0;
+                                      ref.read(gradeJournalViewModelProvider.notifier).saveAttendances(
+                                        attendance: _attendance,
+                                        teacherId: teacherId,
+                                      );
+                                    },
                                   ),
                     _LessonsTab(
                       lessons: _lessons,
+                      canEdit: canEdit,
                       onAdd: () => _showAddLessonDialog(context),
+                      onEdit: (l) => _showEditLessonDialog(context, l),
                     ),
                     _LinksTab(),
                   ],
@@ -398,102 +439,174 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
   }
 
   void _showAddLessonDialog(BuildContext context) {
-    String lessonType = 'Лекція';
+    String lessonType = 'LECTURE';
+    DateTime? selectedDate;
+    final nameCtrl   = TextEditingController();
+    final themeCtrl  = TextEditingController();
+    final scoreCtrl  = TextEditingController();
+    final pairCtrl   = TextEditingController();
+    final roomCtrl   = TextEditingController();
+    String? nameError, themeError, scoreError;
+
     showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setDialogState) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          insetPadding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  const Expanded(
-                    child: Text('Додати нове заняття',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.textDark)),
-                  ),
-                  IconButton(icon: const Icon(Icons.close, size: 20), onPressed: () => Navigator.pop(context)),
-                ]),
-                const SizedBox(height: 16),
-                Row(children: [
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Вид заняття', style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(border: Border.all(color: AppTheme.border), borderRadius: BorderRadius.circular(8)),
-                        child: DropdownButton<String>(
-                          value: lessonType,
-                          isExpanded: true,
-                          underline: const SizedBox(),
-                          items: ['Лекція', 'Практичне заняття', 'Групове заняття', 'Лабораторна робота']
-                              .map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                          onChanged: (v) => setDialogState(() => lessonType = v!),
-                        ),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Дата заняття', style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
-                      const SizedBox(height: 6),
-                      TextField(
-                        decoration: InputDecoration(
-                          hintText: 'дд.мм.рррр',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        ),
-                      ),
-                    ]),
-                  ),
-                ]),
-                const SizedBox(height: 14),
-                _DialogField(label: 'Номер заняття *', hint: 'Введіть номер заняття: 1/1 | 2/2 | 4/3'),
-                const SizedBox(height: 14),
-                _DialogField(label: 'Найменування заняття *', hint: 'Введіть найменування заняття', maxLines: 4),
-                const SizedBox(height: 14),
-                Row(children: [
-                  Expanded(child: _DialogField(label: 'Максимальний бал *', hint: '5', keyboardType: TextInputType.number)),
-                  const SizedBox(width: 12),
-                  Expanded(child: _DialogField(label: 'Пара', hint: '1', keyboardType: TextInputType.number)),
-                ]),
-                const SizedBox(height: 14),
-                _DialogField(label: 'Аудиторія', hint: 'Номер аудиторії'),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                      child: const Text('Скасувати'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                      child: const Text('Створити', style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-        ),
+        builder: (ctx, setDS) {
+          void submit() {
+            bool ok = true;
+            if (nameCtrl.text.trim().isEmpty)  { setDS(() => nameError  = 'Обов\'язкове'); ok = false; }
+            if (themeCtrl.text.trim().isEmpty) { setDS(() => themeError = 'Обов\'язкове'); ok = false; }
+            final ms = double.tryParse(scoreCtrl.text.trim());
+            if (ms == null) { setDS(() => scoreError = 'Введіть число'); ok = false; }
+            if (!ok) return;
+            final teacherId = int.tryParse(ref.read(authViewModelProvider).userId ?? '') ?? 0;
+            final data = <String, dynamic>{
+              'teacherId': teacherId,
+              'markMaxValue': ms,
+              'name': nameCtrl.text.trim(),
+              'theme': themeCtrl.text.trim(),
+              'type': lessonType,
+              if (selectedDate != null)
+                'lessonDate': '${selectedDate!.year.toString().padLeft(4, '0')}-'
+                    '${selectedDate!.month.toString().padLeft(2, '0')}-'
+                    '${selectedDate!.day.toString().padLeft(2, '0')}',
+              if (pairCtrl.text.isNotEmpty && int.tryParse(pairCtrl.text) != null)
+                'lessonPara': int.parse(pairCtrl.text),
+              if (roomCtrl.text.isNotEmpty) 'room': roomCtrl.text.trim(),
+            };
+            Navigator.pop(ctx);
+            ref.read(gradeJournalViewModelProvider.notifier)
+                .createLesson(journalId: _journalId, data: data)
+                .then((_) { if (mounted) _triggerReload(); });
+          }
+
+          return _LessonDialog(
+            title: 'Додати нове заняття',
+            lessonType: lessonType,
+            selectedDate: selectedDate,
+            nameCtrl: nameCtrl,
+            themeCtrl: themeCtrl,
+            scoreCtrl: scoreCtrl,
+            pairCtrl: pairCtrl,
+            roomCtrl: roomCtrl,
+            nameError: nameError,
+            themeError: themeError,
+            scoreError: scoreError,
+            onTypeChanged: (v) => setDS(() => lessonType = v),
+            onDatePicked: (d) => setDS(() => selectedDate = d),
+            onNameChanged: (_) => setDS(() => nameError = null),
+            onThemeChanged: (_) => setDS(() => themeError = null),
+            onScoreChanged: (_) => setDS(() => scoreError = null),
+            submitLabel: 'Створити',
+            onSubmit: submit,
+            onCancel: () => Navigator.pop(ctx),
+          );
+        },
       ),
-    );
+    ).then((_) {
+      nameCtrl.dispose(); themeCtrl.dispose(); scoreCtrl.dispose();
+      pairCtrl.dispose(); roomCtrl.dispose();
+    });
+  }
+
+  void _showEditLessonDialog(BuildContext context, Map<String, dynamic> lesson) {
+    final lessonId = lesson['id'] as int;
+    final rawType  = lesson['type'] as String? ?? 'LECTURE';
+    String lessonType = _lessonTypes.containsKey(rawType) ? rawType : 'LECTURE';
+    final dateStr  = lesson['date'] as String?;
+    DateTime? selectedDate = (dateStr != null && dateStr.isNotEmpty) ? DateTime.tryParse(dateStr) : null;
+
+    final ms = lesson['maxScore'] as double?;
+    final nameCtrl  = TextEditingController(text: lesson['code']  as String? ?? '');
+    final themeCtrl = TextEditingController(text: lesson['topic'] as String? ?? '');
+    final scoreCtrl = TextEditingController(text: ms != null
+        ? (ms == ms.truncateToDouble() ? ms.toInt().toString() : ms.toString()) : '');
+    final pairCtrl  = TextEditingController(text: (lesson['pair'] as int?)?.toString() ?? '');
+    final roomCtrl  = TextEditingController(text: lesson['room']  as String? ?? '');
+    String? nameError, themeError, scoreError;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDS) {
+          void submit() {
+            bool ok = true;
+            if (nameCtrl.text.trim().isEmpty)  { setDS(() => nameError  = 'Обов\'язкове'); ok = false; }
+            if (themeCtrl.text.trim().isEmpty) { setDS(() => themeError = 'Обов\'язкове'); ok = false; }
+            final msVal = double.tryParse(scoreCtrl.text.trim());
+            if (msVal == null) { setDS(() => scoreError = 'Введіть число'); ok = false; }
+            if (!ok) return;
+            final data = <String, dynamic>{
+              'markMaxValue': msVal,
+              'name': nameCtrl.text.trim(),
+              'theme': themeCtrl.text.trim(),
+              'type': lessonType,
+              if (selectedDate != null)
+                'lessonDate': '${selectedDate!.year.toString().padLeft(4, '0')}-'
+                    '${selectedDate!.month.toString().padLeft(2, '0')}-'
+                    '${selectedDate!.day.toString().padLeft(2, '0')}',
+              if (pairCtrl.text.isNotEmpty && int.tryParse(pairCtrl.text) != null)
+                'lessonPara': int.parse(pairCtrl.text),
+              'room': roomCtrl.text.trim(),
+            };
+            Navigator.pop(ctx);
+            ref.read(gradeJournalViewModelProvider.notifier)
+                .updateLesson(lessonId: lessonId, data: data)
+                .then((_) { if (mounted) _triggerReload(); });
+          }
+
+          void deleteConfirm() async {
+            final ok = await showDialog<bool>(
+              context: ctx,
+              builder: (c) => AlertDialog(
+                title: const Text('Видалити заняття?'),
+                content: Text('«${lesson['code']}» буде видалено безповоротно.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Скасувати')),
+                  TextButton(
+                    onPressed: () => Navigator.pop(c, true),
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    child: const Text('Видалити'),
+                  ),
+                ],
+              ),
+            );
+            if (ok == true && ctx.mounted) {
+              Navigator.pop(ctx);
+              ref.read(gradeJournalViewModelProvider.notifier)
+                  .deleteLesson(lessonId)
+                  .then((_) { if (mounted) _triggerReload(); });
+            }
+          }
+
+          return _LessonDialog(
+            title: 'Редагувати заняття',
+            lessonType: lessonType,
+            selectedDate: selectedDate,
+            nameCtrl: nameCtrl,
+            themeCtrl: themeCtrl,
+            scoreCtrl: scoreCtrl,
+            pairCtrl: pairCtrl,
+            roomCtrl: roomCtrl,
+            nameError: nameError,
+            themeError: themeError,
+            scoreError: scoreError,
+            onTypeChanged: (v) => setDS(() => lessonType = v),
+            onDatePicked: (d) => setDS(() => selectedDate = d),
+            onNameChanged: (_) => setDS(() => nameError = null),
+            onThemeChanged: (_) => setDS(() => themeError = null),
+            onScoreChanged: (_) => setDS(() => scoreError = null),
+            submitLabel: 'Оновити',
+            onSubmit: submit,
+            onCancel: () => Navigator.pop(ctx),
+            onDelete: deleteConfirm,
+          );
+        },
+      ),
+    ).then((_) {
+      nameCtrl.dispose(); themeCtrl.dispose(); scoreCtrl.dispose();
+      pairCtrl.dispose(); roomCtrl.dispose();
+    });
   }
 }
 
@@ -536,13 +649,27 @@ class _GradesTabState extends State<_GradesTab> {
   static const double _subH    = 18.0;  // sub-label row (Пр | Бал)
   static const double _rowH    = 42.0;  // data row
   static const double _footerH = 28.0;  // max-score footer row
-  static const double _fixedW  = 160.0;
+  static const double _fixedW  = 180.0;
 
   double _lessonW(Map<String, dynamic> l) =>
       (l['maxScore'] as double?) != null ? _attW + _scoreW : _attW;
 
   double get _totalScrollW =>
       widget.lessons.fold(0.0, (s, l) => s + _lessonW(l));
+
+  // Sum of maxScores for lessons where at least one cadet has a grade.
+  double get _effectiveMaxScore {
+    double sum = 0.0;
+    for (int i = 0; i < widget.lessons.length; i++) {
+      final maxScore = widget.lessons[i]['maxScore'] as double?;
+      if (maxScore == null) continue;
+      final hasAnyGrade = widget.scores.values.any(
+        (scores) => i < scores.length && scores[i] != null,
+      );
+      if (hasAnyGrade) sum += maxScore;
+    }
+    return sum;
+  }
 
   @override
   void initState() {
@@ -622,9 +749,22 @@ class _GradesTabState extends State<_GradesTab> {
     }
   }
 
-  String _shortName(String full) {
-    final p = full.trim().split(' ');
-    return p.length < 2 ? full : '${p[0]} ${p[1][0]}.';
+  String _shortName(String full) => full.trim();
+
+  static const _ukrAlphabet = 'абвгґдеєжзиіїйклмнопрстуфхцчшщьюя';
+
+  int _ukrCompare(String a, String b) {
+    final al = a.toLowerCase();
+    final bl = b.toLowerCase();
+    final len = al.length < bl.length ? al.length : bl.length;
+    for (int i = 0; i < len; i++) {
+      final ai = _ukrAlphabet.indexOf(al[i]);
+      final bi = _ukrAlphabet.indexOf(bl[i]);
+      final ap = ai == -1 ? _ukrAlphabet.length + al.codeUnitAt(i) : ai;
+      final bp = bi == -1 ? _ukrAlphabet.length + bl.codeUnitAt(i) : bi;
+      if (ap != bp) return ap - bp;
+    }
+    return al.length - bl.length;
   }
 
   // ── Score format ───────────────────────────────────────────────────────────
@@ -780,7 +920,7 @@ class _GradesTabState extends State<_GradesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final cadets  = widget.scores.keys.toList();
+    final cadets  = widget.scores.keys.toList()..sort(_ukrCompare);
     final lessons = widget.lessons;
 
     return Column(children: [
@@ -852,8 +992,9 @@ class _GradesTabState extends State<_GradesTab> {
                       final name = cadets[i];
                       final cadetScores = widget.scores[name]!;
                       final total = cadetScores.fold(0.0, (s, v) => s + (v ?? 0.0));
-                      final pct = widget.maxTotalScore > 0
-                          ? (total / widget.maxTotalScore * 100).round().toDouble()
+                      final effMax = _effectiveMaxScore;
+                      final pct = effMax > 0
+                          ? (total / effMax * 100).round().toDouble()
                           : 0.0;
                       final isEven = i % 2 == 0;
                       return Container(
@@ -873,9 +1014,25 @@ class _GradesTabState extends State<_GradesTab> {
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: Text(_shortName(name),
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.textDark),
-                                  overflow: TextOverflow.ellipsis, maxLines: 1),
+                              child: Builder(builder: (_) {
+                                final parts = name.trim().split(' ');
+                                final surname = parts.isNotEmpty ? parts[0] : name;
+                                final initials = parts.length > 1
+                                    ? parts.skip(1).where((p) => p.isNotEmpty).join(' ')
+                                    : '';
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(surname,
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textDark),
+                                        overflow: TextOverflow.ellipsis, maxLines: 1),
+                                    if (initials.isNotEmpty)
+                                      Text(initials,
+                                          style: const TextStyle(fontSize: 10, color: AppTheme.textMid)),
+                                  ],
+                                );
+                              }),
                             ),
                           ),
                           SizedBox(
@@ -915,16 +1072,26 @@ class _GradesTabState extends State<_GradesTab> {
                       right: BorderSide(color: Color(0xFFE2E8F0), width: 2),
                     ),
                   ),
-                  child: const Row(children: [
-                    SizedBox(width: 28),
-                    Expanded(
+                  child: Row(children: [
+                    const SizedBox(width: 28),
+                    const Expanded(
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 6),
                         child: Text('Макс. бал',
                             style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textMid)),
                       ),
                     ),
-                    SizedBox(width: 52),
+                    SizedBox(
+                      width: 52,
+                      child: Center(
+                        child: Text(
+                          _effectiveMaxScore == _effectiveMaxScore.truncateToDouble()
+                              ? _effectiveMaxScore.toInt().toString()
+                              : _effectiveMaxScore.toStringAsFixed(1),
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMid),
+                        ),
+                      ),
+                    ),
                   ]),
                 ),
               ]),
@@ -1095,11 +1262,7 @@ class _GradesTabState extends State<_GradesTab> {
                                       ? Text(_fmtScore(score),
                                           style: TextStyle(fontSize: 13,
                                               fontWeight: FontWeight.w600, color: scoreFg))
-                                      : widget.canEdit
-                                          ? Icon(Icons.add, size: 12,
-                                              color: Colors.grey.shade300)
-                                          : const Text('—',
-                                              style: TextStyle(fontSize: 13, color: Color(0xFFCBD5E1))),
+                                      : const SizedBox.shrink(),
                                 ),
                               );
 
@@ -1232,8 +1395,15 @@ class _LegendDot extends StatelessWidget {
 
 class _LessonsTab extends StatelessWidget {
   final List<Map<String, dynamic>> lessons;
+  final bool canEdit;
   final VoidCallback onAdd;
-  const _LessonsTab({required this.lessons, required this.onAdd});
+  final void Function(Map<String, dynamic>) onEdit;
+  const _LessonsTab({
+    required this.lessons,
+    required this.canEdit,
+    required this.onAdd,
+    required this.onEdit,
+  });
 
   Color _typeBg(String type) {
     switch (_lessonTypeKey(type)) {
@@ -1274,6 +1444,22 @@ class _LessonsTab extends StatelessWidget {
                 child: Text('Всього: ${lessons.length}',
                     style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
               ),
+              if (canEdit) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onAdd,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: AppTheme.primary, borderRadius: BorderRadius.circular(6)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.add, size: 14, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text('Додати', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ),
+              ],
             ]),
           );
         }
@@ -1366,11 +1552,13 @@ class _LessonsTab extends StatelessWidget {
                                               ? AppTheme.primary
                                               : AppTheme.textLight,
                                         )),
-                                    const SizedBox(width: 6),
-                                    GestureDetector(
-                                      onTap: () {},
-                                      child: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textLight),
-                                    ),
+                                    if (canEdit) ...[
+                                      const SizedBox(width: 6),
+                                      GestureDetector(
+                                        onTap: () => onEdit(l),
+                                        child: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textMid),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ],
@@ -1465,12 +1653,18 @@ class _TabItem extends StatelessWidget {
   }
 }
 
-class _DialogField extends StatelessWidget {
+class _CtrlField extends StatelessWidget {
   final String label;
   final String hint;
+  final TextEditingController ctrl;
   final int maxLines;
   final TextInputType? keyboardType;
-  const _DialogField({required this.label, required this.hint, this.maxLines = 1, this.keyboardType});
+  final String? error;
+  final void Function(String)? onChanged;
+  const _CtrlField({
+    required this.label, required this.hint, required this.ctrl,
+    this.maxLines = 1, this.keyboardType, this.error, this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1480,15 +1674,181 @@ class _DialogField extends StatelessWidget {
         Text(label, style: const TextStyle(fontSize: 13, color: AppTheme.textMid)),
         const SizedBox(height: 6),
         TextField(
+          controller: ctrl,
           maxLines: maxLines,
           keyboardType: keyboardType,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hint,
+            errorText: error,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _LessonDialog extends StatelessWidget {
+  final String title;
+  final String lessonType;
+  final DateTime? selectedDate;
+  final TextEditingController nameCtrl, themeCtrl, scoreCtrl, pairCtrl, roomCtrl;
+  final String? nameError, themeError, scoreError;
+  final void Function(String) onTypeChanged;
+  final void Function(DateTime) onDatePicked;
+  final void Function(String) onNameChanged, onThemeChanged, onScoreChanged;
+  final String submitLabel;
+  final VoidCallback onSubmit, onCancel;
+  final VoidCallback? onDelete;
+
+  const _LessonDialog({
+    required this.title, required this.lessonType, required this.selectedDate,
+    required this.nameCtrl, required this.themeCtrl, required this.scoreCtrl,
+    required this.pairCtrl, required this.roomCtrl,
+    this.nameError, this.themeError, this.scoreError,
+    required this.onTypeChanged, required this.onDatePicked,
+    required this.onNameChanged, required this.onThemeChanged, required this.onScoreChanged,
+    required this.submitLabel, required this.onSubmit, required this.onCancel,
+    this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel = selectedDate != null
+        ? '${selectedDate!.day.toString().padLeft(2, '0')}.${selectedDate!.month.toString().padLeft(2, '0')}.${selectedDate!.year}'
+        : 'дд.мм.рррр';
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.all(20),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(children: [
+              Expanded(child: Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.textDark))),
+              IconButton(icon: const Icon(Icons.close, size: 20), onPressed: onCancel,
+                  padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            ]),
+            const SizedBox(height: 16),
+            // Type + Date
+            Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Вид заняття', style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                        border: Border.all(color: AppTheme.border),
+                        borderRadius: BorderRadius.circular(8)),
+                    child: DropdownButton<String>(
+                      value: lessonType,
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      items: _lessonTypes.entries
+                          .map((e) => DropdownMenuItem(value: e.key,
+                              child: Text(e.value, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))))
+                          .toList(),
+                      onChanged: (v) => onTypeChanged(v!),
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Дата заняття', style: TextStyle(fontSize: 13, color: AppTheme.textMid)),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate ?? DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2035),
+                      );
+                      if (d != null) onDatePicked(d);
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                      decoration: BoxDecoration(
+                          border: Border.all(color: AppTheme.border),
+                          borderRadius: BorderRadius.circular(8)),
+                      child: Row(children: [
+                        Expanded(child: Text(dateLabel,
+                            style: TextStyle(fontSize: 13,
+                                color: selectedDate != null ? AppTheme.textDark : AppTheme.textLight))),
+                        const Icon(Icons.calendar_today, size: 14, color: AppTheme.textMid),
+                      ]),
+                    ),
+                  ),
+                ]),
+              ),
+            ]),
+            const SizedBox(height: 14),
+            _CtrlField(label: 'Номер заняття *', hint: '1/1', ctrl: nameCtrl,
+                error: nameError, onChanged: onNameChanged),
+            const SizedBox(height: 14),
+            _CtrlField(label: 'Найменування заняття *', hint: 'Тема заняття',
+                ctrl: themeCtrl, maxLines: 3, error: themeError, onChanged: onThemeChanged),
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(child: _CtrlField(
+                label: 'Максимальний бал *', hint: '5', ctrl: scoreCtrl,
+                keyboardType: TextInputType.number, error: scoreError, onChanged: onScoreChanged,
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: _CtrlField(
+                label: 'Пара (1–4)', hint: '1', ctrl: pairCtrl,
+                keyboardType: TextInputType.number,
+              )),
+            ]),
+            const SizedBox(height: 14),
+            _CtrlField(label: 'Аудиторія', hint: 'Номер аудиторії', ctrl: roomCtrl),
+            const SizedBox(height: 20),
+            // Buttons
+            Row(children: [
+              if (onDelete != null)
+                ElevatedButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, size: 15),
+                  label: const Text('Видалити'),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFDC2626),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                ),
+              if (onDelete != null) const Spacer(),
+              if (onDelete == null) const Spacer(),
+              OutlinedButton(
+                onPressed: onCancel,
+                style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: const Text('Скасувати'),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: onSubmit,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: Text(submitLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ],
+        ),
+      ),
     );
   }
 }

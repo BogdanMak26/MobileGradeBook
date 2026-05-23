@@ -68,6 +68,8 @@ class GradeJournalResponse {
 
       final grades = <int, double?>{};
       final statuses = <int, String?>{};
+      final markIds = <int, int>{};
+      final attendIds = <int, int>{};
 
       for (final l in lessonsRaw) {
         final lMap = l as Map<String, dynamic>;
@@ -82,6 +84,8 @@ class GradeJournalResponse {
             if ((mMap['cadetId'] as int?) == cadetId) {
               final v = (mMap['value'] as num?)?.toDouble();
               if (v != null) totalScore = (totalScore ?? 0.0) + v;
+              final mId = mMap['id'] as int? ?? mMap['markId'] as int?;
+              if (mId != null) markIds[lessonId] = mId;
             }
           }
         }
@@ -93,6 +97,8 @@ class GradeJournalResponse {
           if ((aMap['cadetId'] as int?) == cadetId) {
             final code = MilitaryLabels.attendCode(aMap['attended'] as String?);
             if (code != null) statuses[lessonId] = code;
+            final aId = aMap['id'] as int? ?? aMap['attendId'] as int?;
+            if (aId != null) attendIds[lessonId] = aId;
             break;
           }
         }
@@ -103,6 +109,8 @@ class GradeJournalResponse {
         fullName: fullName,
         gradesByLessonId: grades,
         statusByLessonId: statuses,
+        markIdByLessonId: markIds,
+        attendIdByLessonId: attendIds,
       );
     }).toList();
 
@@ -121,12 +129,16 @@ class JournalCadet {
   final String fullName;
   final Map<int, double?> gradesByLessonId;
   final Map<int, String?> statusByLessonId;
+  final Map<int, int> markIdByLessonId;   // lessonId → markId   (for PATCH/DELETE marks)
+  final Map<int, int> attendIdByLessonId; // lessonId → attendId (for PATCH/DELETE attends)
 
   const JournalCadet({
     required this.id,
     required this.fullName,
     required this.gradesByLessonId,
     required this.statusByLessonId,
+    this.markIdByLessonId = const {},
+    this.attendIdByLessonId = const {},
   });
 
   factory JournalCadet.fromJson(Map<String, dynamic> json) {

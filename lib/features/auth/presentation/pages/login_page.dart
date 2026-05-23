@@ -1,10 +1,7 @@
 // lib/features/auth/presentation/pages/login_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/auth/biometric_preferences.dart';
-import '../../../../core/auth/biometric_service.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../viewmodels/auth_viewmodel.dart';
 
@@ -23,7 +20,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
   bool _isLoading = false;
   String? _errorMessage;
-  String? _loadingRole;
 
   @override
   void initState() {
@@ -42,59 +38,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
     super.dispose();
   }
 
-  Future<void> _login(String role) async {
-    setState(() {
-      _isLoading = true;
-      _loadingRole = role;
-      _errorMessage = null;
-    });
-
-    try {
-      // Симуляція затримки мережі
-      await Future.delayed(const Duration(milliseconds: 1200));
-      ref.read(authViewModelProvider.notifier).mockLogin(role);
-      ref.read(biometricProvider.notifier).saveRole(role);
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Помилка авторизації. Спробуйте ще раз.';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _loadingRole = null;
-        });
-      }
-    }
-  }
-
-  Future<void> _biometricLogin() async {
-    final biometric = ref.read(biometricProvider.notifier);
-    setState(() { _isLoading = true; _loadingRole = 'BIOMETRIC'; _errorMessage = null; });
-    try {
-      final result = await biometric.authenticate('Підтвердіть особу для входу в GradeBook');
-      if (result == BiometricResult.success) {
-        final ok = await ref.read(authViewModelProvider.notifier)
-            .loginWithBiometric(savedRole: biometric.savedRole);
-        if (!ok && mounted) {
-          setState(() => _errorMessage = 'Не вдалося відновити сесію. Увійдіть через Google.');
-        }
-      } else if (result == BiometricResult.lockedOut) {
-        setState(() => _errorMessage = 'Забагато спроб. Спробуйте пізніше.');
-      } else if (result != BiometricResult.cancelled) {
-        setState(() => _errorMessage = 'Біометрична аутентифікація не пройшла.');
-      }
-    } catch (_) {
-      if (mounted) setState(() => _errorMessage = 'Помилка біометрії. Спробуйте увійти через Google.');
-    } finally {
-      if (mounted) setState(() { _isLoading = false; _loadingRole = null; });
-    }
-  }
-
   Future<void> _googleLogin() async {
     setState(() {
       _isLoading = true;
-      _loadingRole = 'GOOGLE';
       _errorMessage = null;
     });
 
@@ -108,10 +54,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _loadingRole = null;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -244,26 +187,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
                           const SizedBox(height: 16),
                         ],
 
-                        // Біометричний вхід (тільки якщо доступний і увімкнений)
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final bio = ref.watch(biometricProvider);
-                            if (!bio.isInitialized || !bio.canUse || !bio.isEnabled) {
-                              return const SizedBox.shrink();
-                            }
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: _BiometricLoginButton(
-                                label: bio.typeLabel,
-                                primaryType: bio.primaryType,
-                                isLoading: _loadingRole == 'BIOMETRIC',
-                                disabled: _isLoading,
-                                onTap: _biometricLogin,
-                              ),
-                            );
-                          },
-                        ),
-
                         // Google Workspace вхід
                         _Section(
                           title: 'Вхід через Google Workspace',
@@ -273,7 +196,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                             child: ElevatedButton.icon(
                               onPressed:
                                   _isLoading ? null : _googleLogin,
-                              icon: _loadingRole == 'GOOGLE'
+                              icon: _isLoading
                                   ? const SizedBox(
                                       width: 18,
                                       height: 18,
@@ -282,7 +205,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                           color: Colors.white))
                                   : const Icon(Icons.login, size: 18),
                               label: Text(
-                                _loadingRole == 'GOOGLE'
+                                _isLoading
                                     ? 'Підключення...'
                                     : 'Увійти через Google',
                                 style: const TextStyle(
@@ -292,57 +215,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-
-                        // Dev секція — вибір ролі
-                        _Section(
-                          title: 'Тестовий вхід (Dev)',
-                          child: Column(
-                            children: [
-                              _RoleButton(
-                                label: 'Викладач',
-                                subtitle: 'Макаренко Б.Л.',
-                                icon: Icons.person,
-                                color: AppTheme.secondary,
-                                isLoading: _loadingRole == 'INSTRUCTOR',
-                                disabled: _isLoading,
-                                onTap: () => _login('INSTRUCTOR'),
-                              ),
-                              const SizedBox(height: 8),
-                              _RoleButton(
-                                label: 'Курсант',
-                                subtitle: 'Сачук О.В.',
-                                icon: Icons.school,
-                                color: const Color(0xFF059669),
-                                isLoading: _loadingRole == 'CADET',
-                                disabled: _isLoading,
-                                onTap: () => _login('CADET'),
-                              ),
-                              const SizedBox(height: 8),
-                              _RoleButton(
-                                label: 'Начальник кафедри',
-                                subtitle: 'Кафедра №22',
-                                icon: Icons.admin_panel_settings,
-                                color: AppTheme.primary,
-                                isLoading:
-                                    _loadingRole == 'DEPARTMENT_HEAD',
-                                disabled: _isLoading,
-                                onTap: () => _login('DEPARTMENT_HEAD'),
-                              ),
-                              const SizedBox(height: 8),
-                              _RoleButton(
-                                label: 'Суперадмін',
-                                subtitle: 'Повний доступ',
-                                icon: Icons.security,
-                                color: const Color(0xFF7C3AED),
-                                isLoading: _loadingRole == 'SUPER_ADMIN',
-                                disabled: _isLoading,
-                                onTap: () => _login('SUPER_ADMIN'),
-                              ),
-                            ],
-                          ),
-                        ),
-
                         const SizedBox(height: 20),
                         Text('Електронний журнал успішності',
                             style: Theme.of(context)
@@ -391,177 +263,3 @@ class _Section extends StatelessWidget {
   }
 }
 
-class _RoleButton extends StatelessWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  final bool isLoading;
-  final bool disabled;
-
-  const _RoleButton({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-    this.isLoading = false,
-    this.disabled = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
-      opacity: disabled && !isLoading ? 0.5 : 1.0,
-      child: InkWell(
-        onTap: disabled ? null : onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: isLoading ? color.withOpacity(0.05) : Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: isLoading ? color : AppTheme.border, width: 1.5),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: isLoading
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: color))
-                    : Icon(icon, color: color, size: 18),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isLoading ? 'Завантаження...' : label,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          color: isLoading ? color : AppTheme.textDark),
-                    ),
-                    Text(subtitle,
-                        style: const TextStyle(
-                            fontSize: 12, color: AppTheme.textMid)),
-                  ],
-                ),
-              ),
-              if (isLoading)
-                const SizedBox.shrink()
-              else
-                const Icon(Icons.chevron_right,
-                    color: AppTheme.textLight, size: 18),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _BiometricLoginButton extends StatelessWidget {
-  final String label;
-  final dynamic primaryType;
-  final bool isLoading;
-  final bool disabled;
-  final VoidCallback onTap;
-
-  const _BiometricLoginButton({
-    required this.label,
-    required this.primaryType,
-    required this.onTap,
-    this.isLoading = false,
-    this.disabled = false,
-  });
-
-  IconData get _icon {
-    if (primaryType?.toString().contains('face') == true) {
-      return Icons.face_unlock_rounded;
-    }
-    return Icons.fingerprint_rounded;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      opacity: disabled && !isLoading ? 0.5 : 1.0,
-      duration: const Duration(milliseconds: 200),
-      child: GestureDetector(
-        onTap: disabled ? null : () {
-          HapticFeedback.mediumImpact();
-          onTap();
-        },
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF1E1B4B), Color(0xFF433F31)],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF1E1B4B).withOpacity(0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (isLoading)
-                const SizedBox(
-                  width: 22, height: 22,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2.5, color: Colors.white),
-                )
-              else
-                Icon(_icon, color: Colors.white, size: 26),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    isLoading ? 'Перевірка...' : 'Увійти через $label',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    'Швидкий вхід без пароля',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.65),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

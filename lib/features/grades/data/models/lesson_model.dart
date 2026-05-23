@@ -8,6 +8,7 @@ class LessonModel {
   final String topic;
   final String date;
   final double maxScore;
+  final int? subLessonId; // ID першого підзаняття — потрібен для POST /marks
   final int? pair;
   final String? room;
 
@@ -19,17 +20,20 @@ class LessonModel {
     required this.topic,
     required this.date,
     required this.maxScore,
+    this.subLessonId,
     this.pair,
     this.room,
   });
 
   factory LessonModel.fromJson(Map<String, dynamic> json) {
-    // Handle JournalLessonResource (lessonId/lessonName/lessonTheme/lessonType)
-    // and LessonDetailsResource (id/name/theme/type) formats
     double maxScore = (json['markMaxValue'] as num?)?.toDouble() ?? 0.0;
-    if (maxScore == 0.0) {
-      final subLessons = json['subLessons'] as List<dynamic>?;
-      if (subLessons != null) {
+    int? subLessonId;
+    final subLessons = json['subLessons'] as List<dynamic>?;
+    if (subLessons != null && subLessons.isNotEmpty) {
+      final firstSl = subLessons.first as Map<String, dynamic>;
+      subLessonId = firstSl['id'] as int?
+          ?? firstSl['subLessonId'] as int?;
+      if (maxScore == 0.0) {
         maxScore = subLessons.fold(0.0, (sum, sl) {
           final slMap = sl as Map<String, dynamic>;
           return sum + ((slMap['markMaxValue'] as num?)?.toDouble() ?? 0.0);
@@ -52,6 +56,7 @@ class LessonModel {
           ?? '',
       date: json['lessonDate'] as String? ?? json['date'] as String? ?? '',
       maxScore: maxScore,
+      subLessonId: subLessonId,
       pair: json['lessonPara'] as int? ?? json['pair'] as int?,
       room: json['room'] as String?,
     );

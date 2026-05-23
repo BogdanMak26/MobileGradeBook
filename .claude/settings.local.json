@@ -30,7 +30,14 @@
       "Bash(dir lib\\\\core\\\\api\\\\repositories.dart)",
       "Bash(dir lib\\\\features\\\\disciplines\\\\data\\\\repositories\\\\disciplines_repository.dart)",
       "Bash(dir K:\\\\Diplom\\\\gradebook_mobile\\\\images_claude *)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(pandoc --version)",
+      "Bash(python *)",
+      "PowerShell(Get-Item *)",
+      "Bash(xargs ls)",
+      "Bash(xargs grep -l \"MarkType\\\\|markType\\\\|mark_type\")",
+      "Read(//c/Users/9990/**)",
+      "Bash(find /k -maxdepth 3 -name \"images_claude\" -type d)"
     ]
   }
 }

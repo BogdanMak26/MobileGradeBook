@@ -47,6 +47,39 @@ class GradesRepository {
     return response.data as List<dynamic>;
   }
 
+  // ── Деталі оцінок з детального списку занять ─────────────────────────────
+  // Returns: cadetId → lessonId → (markId, value)
+  Future<Map<int, Map<int, (int, double)>>> getLessonMarkData(int journalId) async {
+    final response = await _client.dio.get('/lessons/journal/$journalId');
+    final list = response.data as List<dynamic>;
+    final result = <int, Map<int, (int, double)>>{};
+    for (final l in list) {
+      final lMap = l as Map<String, dynamic>;
+      final lessonId = lMap['id'] as int?;
+      if (lessonId == null) continue;
+      final cadetAccum = <int, (int, double)>{};
+      for (final sl in (lMap['subLessons'] as List<dynamic>? ?? [])) {
+        final slMap = sl as Map<String, dynamic>;
+        for (final m in (slMap['marks'] as List<dynamic>? ?? [])) {
+          final mMap = m as Map<String, dynamic>;
+          final cadetId = mMap['cadetId'] as int?;
+          final markId = mMap['id'] as int?;
+          final value = (mMap['value'] as num?)?.toDouble();
+          if (cadetId != null && markId != null && value != null) {
+            final prev = cadetAccum[cadetId];
+            cadetAccum[cadetId] = prev == null
+                ? (markId, value)
+                : (prev.$1, prev.$2 + value); // sum subLessons, keep first markId
+          }
+        }
+      }
+      for (final e in cadetAccum.entries) {
+        (result[e.key] ??= {})[lessonId] = e.value;
+      }
+    }
+    return result;
+  }
+
   // ── CRUD занять ───────────────────────────────────────────────────────────
 
   Future<LessonModel> createLesson({
@@ -81,7 +114,7 @@ class GradesRepository {
     required int subLessonId,
     required int teacherId,
     required double value,
-    String type = 'ПОТОЧНА',
+    String type = 'PRACTICAL',
   }) async {
     final response = await _client.dio.post('/marks', data: {
       'cadetId': cadetId,
@@ -94,11 +127,8 @@ class GradesRepository {
   }
 
   // Updates an existing mark by markId.
-  Future<void> updateMark(int markId, double value, [String type = 'ПОТОЧНА']) async {
-    await _client.dio.patch('/marks/$markId', data: {
-      'markValue': value,
-      'markType': type,
-    });
+  Future<void> updateMark(int markId, double value) async {
+    await _client.dio.patch('/marks/$markId', data: {'markValue': value});
   }
 
   Future<void> deleteMark(int markId) async {
