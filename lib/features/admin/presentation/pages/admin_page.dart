@@ -4,6 +4,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/repositories.dart';
+import '../../../../core/local/local_cache.dart';
+import '../../../../core/network/network_monitor.dart';
 import '../../../../features/disciplines/data/repositories/disciplines_repository.dart';
 import '../../../../shared/theme/app_theme.dart';
 
@@ -66,7 +68,7 @@ const _groupTypes = <String, String>{'FULL_TIME': 'Очна ф.н.', 'CORRESPOND
 const _genders = <String, String>{'MALE': 'Чоловік', 'FEMALE': 'Жінка'};
 const _roles = <String, String>{
   'CADET': 'Курсант', 'TEACHER': 'Викладач',
-  'DEPARTMENT_HEAD': 'Нач. кафедри', 'SUPER_ADMIN': 'Адміністратор',
+  'DEPARTMENT_HEAD': 'Нач. кафедри', 'SUPERADMIN': 'Адміністратор',
 };
 
 // ── AdminPage ──────────────────────────────────────────────────────────────────
@@ -150,6 +152,7 @@ class _UsersTabState extends ConsumerState<_UsersTab> {
   bool _loading = true;
   String? _error;
   Timer? _searchDebounce;
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -166,34 +169,81 @@ class _UsersTabState extends ConsumerState<_UsersTab> {
   }
 
   Future<void> _loadRefData() async {
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    // Застосовуємо кеш для форм редагування
+    final cg = cache.get<List<dynamic>>('admin_ref_groups');
+    final ck = cache.get<List<dynamic>>('admin_ref_kafedras');
+    if (cg != null || ck != null) {
+      setState(() {
+        if (cg != null) _groups = cg.cast<Map<String, dynamic>>();
+        if (ck != null) _kafedras = ck.cast<Map<String, dynamic>>();
+      });
+    }
+    if (!network.isOnline) return;
     try {
       final groupData = await ref.read(groupsRepositoryProvider).getGroups();
       final kafedraData = await ref.read(kafedrasRepositoryProvider).getKafedras();
       if (!mounted) return;
-      setState(() {
-        _groups = groupData.cast<Map<String, dynamic>>();
-        _kafedras = kafedraData.cast<Map<String, dynamic>>();
-      });
+      final groups = groupData.cast<Map<String, dynamic>>();
+      final kafedras = kafedraData.cast<Map<String, dynamic>>();
+      await cache.set('admin_ref_groups', groups);
+      await cache.set('admin_ref_kafedras', kafedras);
+      setState(() { _groups = groups; _kafedras = kafedras; });
     } catch (_) {}
+  }
+
+  List<Map<String, dynamic>> get _filteredUsers {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return _users;
+    return _users.where((u) {
+      final name    = (u['name']    as String? ?? '').toLowerCase();
+      final surname = (u['surname'] as String? ?? '').toLowerCase();
+      final email   = (u['email']   as String? ?? '').toLowerCase();
+      return name.contains(q) || surname.contains(q) || email.contains(q);
+    }).toList();
   }
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    final seq = ++_loadSeq;
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    setState(() { _error = null; });
+
+    // Кеш тільки для сторінки 0 без фільтрів (типовий вигляд)
+    final isDefault = _page == 0 && _roleFilter.isEmpty && _searchCtrl.text.trim().isEmpty;
+    if (isDefault) {
+      final cached = cache.get<Map<String, dynamic>>('admin_users');
+      if (cached != null) {
+        final content = (cached['content'] as List? ?? []).cast<Map<String, dynamic>>();
+        final total = cached['totalElements'] as int? ?? content.length;
+        setState(() { _users = content; _totalElements = total; });
+      }
+    }
+
+    if (!network.isOnline) {
+      setState(() { _loading = false; });
+      return;
+    }
+
+    setState(() { _loading = _users.isEmpty; });
     try {
+      final hasSearch = _searchCtrl.text.trim().isNotEmpty;
+      final fetchSize = hasSearch ? 10000 : _pageSize;
       final result = await ref.read(userRepositoryProvider).getUsers(
-        page: _page,
-        size: _pageSize,
+        page: hasSearch ? 0 : _page,
+        size: fetchSize,
         role: _roleFilter.isEmpty ? null : _roleFilter,
-        search: _searchCtrl.text.trim().isEmpty ? null : _searchCtrl.text.trim(),
       );
+      if (!mounted || seq != _loadSeq) return;
       final content = (result['content'] as List? ?? []).cast<Map<String, dynamic>>();
       final total = result['totalElements'] as int? ?? content.length;
-      if (!mounted) return;
+      if (isDefault) await cache.set('admin_users', result);
       setState(() { _users = content; _totalElements = total; _loading = false; });
     } catch (e) {
-      if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      if (!mounted || seq != _loadSeq) return;
+      setState(() { _error = _users.isEmpty ? e.toString() : null; _loading = false; });
     }
   }
 
@@ -216,10 +266,24 @@ class _UsersTabState extends ConsumerState<_UsersTab> {
         initial: user,
         groups: _groups, kafedras: _kafedras,
         onSubmit: (data) {
-          final repo = ref.read(userRepositoryProvider);
-          final future = user == null
-              ? repo.createUser(data)
-              : repo.updateUser(user['id'] as int, data);
+          final cadetRepo   = ref.read(cadetsRepositoryProvider);
+          final teacherRepo = ref.read(teachersRepositoryProvider);
+          final newRole = (data['roles'] as List?)?.firstOrNull?.toString() ?? '';
+          final existingRole = ((user?['roles'] as List?)?.firstOrNull?.toString()) ?? '';
+          final role = user == null ? newRole : existingRole;
+
+          Future<dynamic> future;
+          if (user == null) {
+            future = role == 'CADET'
+                ? cadetRepo.createCadet(data)
+                : teacherRepo.createTeacher(data);
+          } else {
+            final id = user['id'] as int;
+            future = role == 'CADET'
+                ? cadetRepo.updateCadet(id, data)
+                : teacherRepo.updateTeacher(id, data);
+          }
+
           future
             .then((_) { if (mounted) { setState(() => _page = 0); _load(); } })
             .catchError((e) {
@@ -259,8 +323,11 @@ class _UsersTabState extends ConsumerState<_UsersTab> {
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
               onPressed: () {
                 Navigator.pop(ctx);
-                ref.read(userRepositoryProvider)
-                    .deleteUser(user['id'] as int, mode: mode)
+                final userRole = ((user['roles'] as List?)?.firstOrNull?.toString()) ?? '';
+                final Future<void> deleteFuture = userRole == 'CADET'
+                    ? ref.read(cadetsRepositoryProvider).deleteCadet(user['id'] as int, mode: mode)
+                    : ref.read(teachersRepositoryProvider).deleteTeacher(user['id'] as int, mode: mode);
+                deleteFuture
                     .then((_) {
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -351,17 +418,18 @@ class _UsersTabState extends ConsumerState<_UsersTab> {
             ? const Center(child: CircularProgressIndicator())
             : _error != null && _users.isEmpty
                 ? _ErrorView(error: _error!, onRetry: _load)
-                : _users.isEmpty
+                : _filteredUsers.isEmpty
                     ? const Center(child: Text('Нічого не знайдено', style: TextStyle(color: AppTheme.textMid)))
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        itemCount: _users.length,
+                        itemCount: _filteredUsers.length,
                         itemBuilder: (_, i) {
-                          final u = _users[i];
+                          final u = _filteredUsers[i];
                           final name = (u['name'] as String? ?? '');
                           final surname = (u['surname'] as String? ?? '');
-                          final role = (u['role'] as String? ?? '');
-                          final roleColor = role == 'SUPER_ADMIN' ? Colors.purple
+                          final roles = (u['roles'] as List?) ?? [];
+                          final role = roles.isNotEmpty ? roles.first.toString() : '';
+                          final roleColor = role == 'SUPERADMIN' ? Colors.purple
                               : role == 'DEPARTMENT_HEAD' ? Colors.orange
                               : role == 'TEACHER' ? AppTheme.secondary : AppTheme.primary;
                           final initials = '${name.isNotEmpty ? name[0] : ''}${surname.isNotEmpty ? surname[0] : ''}';
@@ -426,7 +494,7 @@ class _UsersTabState extends ConsumerState<_UsersTab> {
                         },
                       ),
       ),
-      if (total > 1)
+      if (total > 1 && _searchCtrl.text.trim().isEmpty)
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: const BoxDecoration(
@@ -472,14 +540,15 @@ class _UserSheetState extends State<_UserSheet> {
     _nameCtrl     = TextEditingController(text: d?['name'] as String? ?? '');
     _surnameCtrl  = TextEditingController(text: d?['surname'] as String? ?? '');
     _emailCtrl    = TextEditingController(text: d?['email'] as String? ?? '');
-    _phoneCtrl    = TextEditingController(text: d?['phone'] as String? ?? '');
+    _phoneCtrl    = TextEditingController(text: d?['phoneNumber'] as String? ?? '');
     _birthdayCtrl = TextEditingController(text: d?['birthday'] as String? ?? '');
-    _role         = d?['role'] as String? ?? 'CADET';
+    final serverRoles = (d?['roles'] as List?)?.map((r) => r.toString()).toList() ?? [];
+    _role         = serverRoles.isNotEmpty ? serverRoles.first : 'CADET';
     _rank         = d?['rank'] as String? ?? '';
     _position     = d?['position'] as String? ?? '';
     _gender       = d?['gender'] as String? ?? '';
-    _studyRank    = d?['studyRank'] as String? ?? '';
-    _studyPosition = d?['studyPosition'] as String? ?? '';
+    _studyRank    = d?['scientificDegree'] as String? ?? '';
+    _studyPosition = d?['academicRank'] as String? ?? '';
     _groupId      = d?['groupId'] as int?;
     _kafedraId    = d?['kafedraId'] as int?;
   }
@@ -493,24 +562,25 @@ class _UserSheetState extends State<_UserSheet> {
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
-    final group = _isCadet
-        ? widget.groups.where((g) => g['id'] == _groupId).cast<Map<String,dynamic>?>().firstOrNull
-        : null;
-    final kafedra = _isTeacher
-        ? widget.kafedras.where((k) => k['id'] == _kafedraId).cast<Map<String,dynamic>?>().firstOrNull
-        : null;
-    widget.onSubmit({
-      'name': _nameCtrl.text.trim(), 'surname': _surnameCtrl.text.trim(),
-      'email': _emailCtrl.text.trim(), 'role': _role,
-      'rank': _rank, 'position': _position, 'gender': _gender,
-      'phone': _phoneCtrl.text.trim(), 'birthday': _birthdayCtrl.text.trim(),
-      'studyRank': _isTeacher ? _studyRank : '',
-      'studyPosition': _isTeacher ? _studyPosition : '',
-      if (_isCadet) 'groupId': _groupId,
-      if (_isCadet) 'groupName': group?['name'] ?? '',
-      if (_isTeacher) 'kafedraId': _kafedraId,
-      if (_isTeacher) 'kafedraName': kafedra?['name'] ?? '',
-    });
+    final isCreate = widget.initial == null;
+    final body = <String, dynamic>{
+      'name': _nameCtrl.text.trim(),
+      'surname': _surnameCtrl.text.trim(),
+      if (_rank.isNotEmpty) 'rank': _rank,
+      if (_position.isNotEmpty) 'position': _position,
+      if (_gender.isNotEmpty) 'gender': _gender,
+      if (_phoneCtrl.text.trim().isNotEmpty) 'phoneNumber': _phoneCtrl.text.trim(),
+      if (_birthdayCtrl.text.trim().isNotEmpty) 'birthday': _birthdayCtrl.text.trim(),
+      if (_isTeacher && _studyRank.isNotEmpty) 'scientificDegree': _studyRank,
+      if (_isTeacher && _studyPosition.isNotEmpty) 'academicRank': _studyPosition,
+      if (_isCadet && _groupId != null) 'groupId': _groupId,
+      if (_isTeacher && _kafedraId != null) 'kafedraId': _kafedraId,
+    };
+    if (isCreate) {
+      body['email'] = _emailCtrl.text.trim();
+      body['roles'] = [_role];
+    }
+    widget.onSubmit(body);
     Navigator.pop(context);
   }
 
@@ -640,14 +710,22 @@ class _FacultiesTabState extends ConsumerState<_FacultiesTab> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    setState(() => _error = null);
+    final cached = cache.get<List<dynamic>>('admin_faculties');
+    if (cached != null) setState(() => _items = cached.cast<Map<String, dynamic>>());
+    if (!network.isOnline) { setState(() => _loading = false); return; }
+    setState(() => _loading = _items.isEmpty);
     try {
       final data = await ref.read(facultiesRepositoryProvider).getFaculties();
       if (!mounted) return;
-      setState(() { _items = data.cast<Map<String, dynamic>>(); _loading = false; });
+      final items = data.cast<Map<String, dynamic>>();
+      await cache.set('admin_faculties', items);
+      setState(() { _items = items; _loading = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() { _error = _items.isEmpty ? e.toString() : null; _loading = false; });
     }
   }
 
@@ -691,7 +769,7 @@ class _FacultiesTabState extends ConsumerState<_FacultiesTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
     if (_error != null) return _ErrorView(error: _error!, onRetry: _load);
     return _ListTab(
       title: 'Управління факультетами',
@@ -775,19 +853,27 @@ class _KafedrasTabState extends ConsumerState<_KafedrasTab> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    setState(() => _error = null);
+    final ck = cache.get<List<dynamic>>('admin_kafedras');
+    final cf = cache.get<List<dynamic>>('admin_faculties');
+    if (ck != null) setState(() => _items = ck.cast<Map<String, dynamic>>());
+    if (cf != null) setState(() => _faculties = cf.cast<Map<String, dynamic>>());
+    if (!network.isOnline) { setState(() => _loading = false); return; }
+    setState(() => _loading = _items.isEmpty);
     try {
       final kafedraData = await ref.read(kafedrasRepositoryProvider).getKafedras();
       final facultyData = await ref.read(facultiesRepositoryProvider).getFaculties();
       if (!mounted) return;
-      setState(() {
-        _items = kafedraData.cast<Map<String, dynamic>>();
-        _faculties = facultyData.cast<Map<String, dynamic>>();
-        _loading = false;
-      });
+      final kafedras = kafedraData.cast<Map<String, dynamic>>();
+      final faculties = facultyData.cast<Map<String, dynamic>>();
+      await cache.set('admin_kafedras', kafedras);
+      await cache.set('admin_faculties', faculties);
+      setState(() { _items = kafedras; _faculties = faculties; _loading = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() { _error = _items.isEmpty ? e.toString() : null; _loading = false; });
     }
   }
 
@@ -831,7 +917,7 @@ class _KafedrasTabState extends ConsumerState<_KafedrasTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
     if (_error != null) return _ErrorView(error: _error!, onRetry: _load);
     return _ListTab(
       title: 'Управління кафедрами',
@@ -932,19 +1018,27 @@ class _GroupsTabState extends ConsumerState<_GroupsTab> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    setState(() => _error = null);
+    final cg = cache.get<List<dynamic>>('admin_groups');
+    final cf = cache.get<List<dynamic>>('admin_faculties');
+    if (cg != null) setState(() => _items = cg.cast<Map<String, dynamic>>());
+    if (cf != null) setState(() => _faculties = cf.cast<Map<String, dynamic>>());
+    if (!network.isOnline) { setState(() => _loading = false); return; }
+    setState(() => _loading = _items.isEmpty);
     try {
       final groupData = await ref.read(groupsRepositoryProvider).getGroups();
       final facultyData = await ref.read(facultiesRepositoryProvider).getFaculties();
       if (!mounted) return;
-      setState(() {
-        _items = groupData.cast<Map<String, dynamic>>();
-        _faculties = facultyData.cast<Map<String, dynamic>>();
-        _loading = false;
-      });
+      final groups = groupData.cast<Map<String, dynamic>>();
+      final faculties = facultyData.cast<Map<String, dynamic>>();
+      await cache.set('admin_groups', groups);
+      await cache.set('admin_faculties', faculties);
+      setState(() { _items = groups; _faculties = faculties; _loading = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() { _error = _items.isEmpty ? e.toString() : null; _loading = false; });
     }
   }
 
@@ -988,7 +1082,7 @@ class _GroupsTabState extends ConsumerState<_GroupsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
     if (_error != null) return _ErrorView(error: _error!, onRetry: _load);
     return _ListTab(
       title: 'Управління групами',
@@ -1130,19 +1224,27 @@ class _SemestersTabState extends ConsumerState<_SemestersTab> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    setState(() => _error = null);
+    final cs = cache.get<List<dynamic>>('admin_semesters');
+    final cg = cache.get<List<dynamic>>('admin_groups');
+    if (cs != null) setState(() => _items = cs.cast<Map<String, dynamic>>());
+    if (cg != null) setState(() => _groups = cg.cast<Map<String, dynamic>>());
+    if (!network.isOnline) { setState(() => _loading = false); return; }
+    setState(() => _loading = _items.isEmpty);
     try {
       final semData = await ref.read(semestersRepositoryProvider).getSemesters();
       final groupData = await ref.read(groupsRepositoryProvider).getGroups();
       if (!mounted) return;
-      setState(() {
-        _items = semData.cast<Map<String, dynamic>>();
-        _groups = groupData.cast<Map<String, dynamic>>();
-        _loading = false;
-      });
+      final sems = semData.cast<Map<String, dynamic>>();
+      final groups = groupData.cast<Map<String, dynamic>>();
+      await cache.set('admin_semesters', sems);
+      await cache.set('admin_groups', groups);
+      setState(() { _items = sems; _groups = groups; _loading = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() { _error = _items.isEmpty ? e.toString() : null; _loading = false; });
     }
   }
 
@@ -1186,7 +1288,7 @@ class _SemestersTabState extends ConsumerState<_SemestersTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
     if (_error != null) return _ErrorView(error: _error!, onRetry: _load);
     return _ListTab(
       title: 'Управління семестрами',
@@ -1328,7 +1430,15 @@ class _DisciplinesAdminTabState extends ConsumerState<_DisciplinesAdminTab> {
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    setState(() => _error = null);
+    final cd = cache.get<List<dynamic>>('admin_disciplines');
+    final ck = cache.get<List<dynamic>>('admin_kafedras');
+    if (cd != null) setState(() => _items = cd.cast<Map<String, dynamic>>());
+    if (ck != null) setState(() => _kafedras = ck.cast<Map<String, dynamic>>());
+    if (!network.isOnline) { setState(() => _loading = false); return; }
+    setState(() => _loading = _items.isEmpty);
     try {
       final disciplines = await ref.read(disciplinesRepositoryProvider).getAllDisciplines();
       final kafedraData = await ref.read(kafedrasRepositoryProvider).getKafedras();
@@ -1337,21 +1447,20 @@ class _DisciplinesAdminTabState extends ConsumerState<_DisciplinesAdminTab> {
       final kafedraMap = {
         for (final k in kafedras) (k['id'] as int): (k['name'] as String? ?? '')
       };
-      setState(() {
-        _kafedras = kafedras;
-        _items = disciplines.map((d) => <String, dynamic>{
-          'id': d.id,
-          'name': d.fullName,
-          'short': d.shortName ?? '',
-          'kafedraId': d.kafedraId,
-          'kafedraName': d.kafedraId != null ? (kafedraMap[d.kafedraId] ?? '') : '',
-          'journals': d.journalCount,
-        }).toList();
-        _loading = false;
-      });
+      final items = disciplines.map((d) => <String, dynamic>{
+        'id': d.id,
+        'name': d.fullName,
+        'short': d.shortName ?? '',
+        'kafedraId': d.kafedraId,
+        'kafedraName': d.kafedraId != null ? (kafedraMap[d.kafedraId] ?? '') : '',
+        'journals': d.journalCount,
+      }).toList();
+      await cache.set('admin_disciplines', items);
+      await cache.set('admin_kafedras', kafedras);
+      setState(() { _kafedras = kafedras; _items = items; _loading = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() { _error = _items.isEmpty ? e.toString() : null; _loading = false; });
     }
   }
 
@@ -1401,7 +1510,7 @@ class _DisciplinesAdminTabState extends ConsumerState<_DisciplinesAdminTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
     if (_error != null) return _ErrorView(error: _error!, onRetry: _load);
     return Column(children: [
       Padding(
@@ -1517,9 +1626,9 @@ class _DisciplineSheetState extends State<_DisciplineSheet> {
     if (!_formKey.currentState!.validate()) return;
     final kafedra = widget.kafedras.where((k) => k['id'] == _kafedraId).cast<Map<String,dynamic>?>().firstOrNull;
     widget.onSubmit({
-      'name': _nameCtrl.text.trim(),
-      'shortName': _shortCtrl.text.trim(),
-      'kafedraId': _kafedraId,
+      'fullName':   _nameCtrl.text.trim(),
+      'shortName':  _shortCtrl.text.trim(),
+      'kafedraId':  _kafedraId,
       'kafedraName': kafedra?['name'] ?? '',
     });
     Navigator.pop(context);
@@ -1554,16 +1663,44 @@ class _DisciplineSheetState extends State<_DisciplineSheet> {
   );
 }
 
-class _MoveJournalSheet extends StatefulWidget {
+class _MoveJournalSheet extends ConsumerStatefulWidget {
   final Map<String, dynamic> discipline;
   final List<Map<String, dynamic>> disciplines;
   const _MoveJournalSheet({required this.discipline, required this.disciplines});
   @override
-  State<_MoveJournalSheet> createState() => _MoveJournalSheetState();
+  ConsumerState<_MoveJournalSheet> createState() => _MoveJournalSheetState();
 }
 
-class _MoveJournalSheetState extends State<_MoveJournalSheet> {
+class _MoveJournalSheetState extends ConsumerState<_MoveJournalSheet> {
   int? _targetId;
+  bool _loading = false;
+
+  Future<void> _move() async {
+    if (_targetId == null) return;
+    setState(() => _loading = true);
+    try {
+      final journalRepo = ref.read(journalsRepositoryProvider);
+      final journals = await journalRepo.getJournals(
+          disciplineId: widget.discipline['id'] as int);
+      for (final j in journals) {
+        final id = j['id'] as int?;
+        if (id != null) await journalRepo.updateJournal(id, {'disciplineId': _targetId});
+      }
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(
+          'Перенесено ${journals.length} журн. до дисципліни "${widget.disciplines.firstWhere((d) => d['id'] == _targetId)['short']}"'
+        )),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Помилка: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1587,17 +1724,16 @@ class _MoveJournalSheetState extends State<_MoveJournalSheet> {
         const SizedBox(height: 24),
         Row(children: [
           Expanded(child: OutlinedButton(
-              onPressed: () => Navigator.pop(context), child: const Text('Скасувати'))),
+              onPressed: _loading ? null : () => Navigator.pop(context),
+              child: const Text('Скасувати'))),
           const SizedBox(width: 12),
           Expanded(child: ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.white),
-            onPressed: _targetId == null ? null : () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Журнал перенесено')),
-              );
-            },
-            child: const Text('Перенести'),
+            onPressed: (_targetId == null || _loading) ? null : _move,
+            child: _loading
+                ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Перенести'),
           )),
         ]),
       ]),

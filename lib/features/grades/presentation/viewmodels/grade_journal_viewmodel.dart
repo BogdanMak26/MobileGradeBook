@@ -1,11 +1,17 @@
 // lib/features/grades/presentation/viewmodels/grade_journal_viewmodel.dart
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/api/repositories.dart';
 import '../../../../core/local/local_cache.dart';
 import '../../../../core/local/offline_queue.dart';
 import '../../../../core/network/network_monitor.dart';
+import '../../../../core/background/background_tasks.dart';
+import '../../../../core/notifications/notification_preferences.dart';
+import '../../../../core/notifications/notification_service.dart';
 import '../../../../core/utils/military_labels.dart';
+import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../data/models/grade_model.dart';
 import '../../data/models/lesson_model.dart';
 import '../../data/repositories/grades_repository.dart';
@@ -15,10 +21,11 @@ import '../../data/repositories/grades_repository.dart';
 class JournalState {
   final bool isLoading;
   final String? error;
-  final GradeJournalResponse? journal; // grades tab: cadets + lessons + оцінки
-  final List<LessonModel> lessons;     // lessons tab: детальний список занять
+  final GradeJournalResponse? journal;
+  final List<LessonModel> lessons;
   final bool isSyncing;
   final String? syncMessage;
+  final String? offlineMessage; // сервер впав — дані в черзі
 
   const JournalState({
     this.isLoading = false,
@@ -27,6 +34,7 @@ class JournalState {
     this.lessons = const [],
     this.isSyncing = false,
     this.syncMessage,
+    this.offlineMessage,
   });
 
   JournalState copyWith({
@@ -36,6 +44,7 @@ class JournalState {
     List<LessonModel>? lessons,
     bool? isSyncing,
     String? syncMessage,
+    String? offlineMessage,
   }) =>
       JournalState(
         isLoading: isLoading ?? this.isLoading,
@@ -44,6 +53,7 @@ class JournalState {
         lessons: lessons ?? this.lessons,
         isSyncing: isSyncing ?? this.isSyncing,
         syncMessage: syncMessage,
+        offlineMessage: offlineMessage,
       );
 }
 
@@ -55,14 +65,62 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
   final LocalCache _cache;
   final NetworkMonitor _network;
   final OfflineQueueNotifier _queue;
+  final NotificationService _notifService;
+  final String _role;
 
   // Runtime cache for markIds created during this session (cadetId → lessonId → markId)
   final Map<int, Map<int, int>> _markIds = {};
   // Runtime cache for attendIds created during this session (cadetId → lessonId → attendId)
   final Map<int, Map<int, int>> _attendIds = {};
 
-  GradeJournalViewModel(this._repo, this._attendsRepo, this._cache, this._network, this._queue)
+  String _disciplineName = '';
+
+  void setDisciplineName(String name) => _disciplineName = name;
+
+  GradeJournalViewModel(this._repo, this._attendsRepo, this._cache, this._network, this._queue, this._notifService, this._role)
       : super(const JournalState());
+
+  Future<void> _checkUnfilledJournals(GradeJournalResponse journal) async {
+    if (!await isNotifEnabled(NotifKey.unfilledJournals, role: _role)) return;
+    final now = DateTime.now();
+    final hasUnfilled = journal.lessons.any((l) {
+      final d = DateTime.tryParse(l.date);
+      if (d == null || !d.isBefore(DateTime(now.year, now.month, now.day))) return false;
+      return journal.cadets.every((c) => c.gradesByLessonId[l.id] == null);
+    });
+    if (!hasUnfilled) return;
+    final prefs = await SharedPreferences.getInstance();
+    // Встановлюємо флаг для фонової задачі
+    await prefs.setBool(kUnfilledJournalsFlag, true);
+    final dedupKey = 'notif_unfilled_${journal.journalId}_${now.year}${now.month}${now.day}';
+    if (prefs.getBool(dedupKey) == true) return;
+    await prefs.setBool(dedupKey, true);
+    await _notifService.show(
+      id: journal.journalId % 65535,
+      title: 'Незаповнений журнал',
+      body: 'Є заняття в минулому без виставлених оцінок',
+    );
+  }
+
+  // Сервер недоступний (timeout / connection error / 5xx) — треба класти в чергу
+  bool _isServerDown(dynamic e) {
+    if (e is DioException) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.connectionError) return true;
+      final status = e.response?.statusCode ?? 0;
+      if (status >= 500) return true;
+    }
+    return false;
+  }
+
+  Future<void> _enqueueServerDown(PendingOp op) async {
+    await _queue.enqueue(op);
+    state = state.copyWith(
+      offlineMessage: 'Сервер тимчасово недоступний — зміни збережено і синхронізуються автоматично при відновленні',
+    );
+  }
 
   // ── Журнал оцінок ─────────────────────────────────────────────────────────
 
@@ -73,8 +131,15 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
   }) async {
     state = const JournalState(isLoading: true);
 
+    final cacheKey = 'journal_${groupId}_${disciplineId}_$semesterId';
+    final cachedRaw = _cache.get<Map<String, dynamic>>(cacheKey);
+    if (cachedRaw != null) {
+      final cached = GradeJournalResponse.fromCacheJson(cachedRaw);
+      state = state.copyWith(journal: cached);
+    }
+
     if (!_network.isOnline) {
-      state = const JournalState();
+      state = state.copyWith(isLoading: false);
       return;
     }
 
@@ -85,9 +150,15 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
         semesterId: semesterId,
       );
       final journal = await _mergeMarkData(raw);
+      await _cache.set(cacheKey, journal.toJson());
       state = state.copyWith(isLoading: false, journal: journal);
+      _checkUnfilledJournals(journal);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      if (cachedRaw == null) {
+        state = state.copyWith(isLoading: false, error: e.toString());
+      } else {
+        state = state.copyWith(isLoading: false);
+      }
     }
   }
 
@@ -95,16 +166,31 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
 
   Future<void> loadJournalById(int journalId) async {
     state = const JournalState(isLoading: true);
+
+    final cacheKey = 'journal_id_$journalId';
+    final cachedRaw = _cache.get<Map<String, dynamic>>(cacheKey);
+    if (cachedRaw != null) {
+      final cached = GradeJournalResponse.fromCacheJson(cachedRaw);
+      state = state.copyWith(journal: cached);
+    }
+
     if (!_network.isOnline) {
-      state = const JournalState();
+      state = state.copyWith(isLoading: false);
       return;
     }
+
     try {
       final raw = await _repo.getJournalById(journalId);
       final journal = await _mergeMarkData(raw);
+      await _cache.set(cacheKey, journal.toJson());
       state = state.copyWith(isLoading: false, journal: journal);
+      _checkUnfilledJournals(journal);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      if (cachedRaw == null) {
+        state = state.copyWith(isLoading: false, error: e.toString());
+      } else {
+        state = state.copyWith(isLoading: false);
+      }
     }
   }
 
@@ -261,66 +347,94 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     try {
       if (value == null) {
         if (existingMarkId == null) return;
+        final op = PendingOp(
+          id: 'mark_del_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'DELETE',
+          path: '/marks/$existingMarkId',
+          data: {},
+          createdAt: DateTime.now(),
+        );
         if (!_network.isOnline) {
-          await _queue.enqueue(PendingOp(
-            id: 'mark_del_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
-            method: 'DELETE',
-            path: '/marks/$existingMarkId',
-            data: {},
-            createdAt: DateTime.now(),
-          ));
+          await _queue.enqueue(op);
           (_markIds[cadetId] ??= {}).remove(lessonId);
           return;
         }
-        await _repo.deleteMark(existingMarkId);
-        (_markIds[cadetId] ??= {}).remove(lessonId);
+        try {
+          await _repo.deleteMark(existingMarkId);
+          (_markIds[cadetId] ??= {}).remove(lessonId);
+        } catch (e) {
+          if (_isServerDown(e)) { await _enqueueServerDown(op); return; }
+          rethrow;
+        }
       } else if (existingMarkId != null) {
+        final op = PendingOp(
+          id: 'mark_upd_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'PATCH',
+          path: '/marks/$existingMarkId',
+          data: {'markValue': value},
+          createdAt: DateTime.now(),
+        );
         if (!_network.isOnline) {
-          await _queue.enqueue(PendingOp(
-            id: 'mark_upd_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
-            method: 'PATCH',
-            path: '/marks/$existingMarkId',
-            data: {'markValue': value},
-            createdAt: DateTime.now(),
-          ));
+          await _queue.enqueue(op);
           return;
         }
-        await _repo.updateMark(existingMarkId, value);
+        try {
+          await _repo.updateMark(existingMarkId, value);
+        } catch (e) {
+          if (_isServerDown(e)) { await _enqueueServerDown(op); return; }
+          rethrow;
+        }
       } else {
         if (subLessonId == null) {
           state = state.copyWith(error: 'Немає підзаняття для заняття $lessonId');
           return;
         }
+        final op = PendingOp(
+          id: 'mark_new_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'POST',
+          path: '/marks',
+          data: {
+            'cadetId': cadetId,
+            'subLessonId': subLessonId,
+            'teacherId': teacherId,
+            'value': value,
+            'type': 'PRACTICAL',
+          },
+          createdAt: DateTime.now(),
+        );
         if (!_network.isOnline) {
-          await _queue.enqueue(PendingOp(
-            id: 'mark_new_${cadetId}_${lessonId}_${DateTime.now().millisecondsSinceEpoch}',
-            method: 'POST',
-            path: '/marks',
-            data: {
-              'cadetId': cadetId,
-              'subLessonId': subLessonId,
-              'teacherId': teacherId,
-              'value': value,
-              'type': 'PRACTICAL',
-            },
-            createdAt: DateTime.now(),
-          ));
+          await _queue.enqueue(op);
           return;
         }
-        final result = await _repo.createMark(
-          cadetId: cadetId,
-          subLessonId: subLessonId,
-          teacherId: teacherId,
-          value: value,
-        );
-        final newMarkId = result['id'] as int? ?? result['markId'] as int?;
-        if (newMarkId != null) {
-          (_markIds[cadetId] ??= {})[lessonId] = newMarkId;
+        try {
+          final result = await _repo.createMark(
+            cadetId: cadetId,
+            subLessonId: subLessonId,
+            teacherId: teacherId,
+            value: value,
+          );
+          final newMarkId = result['id'] as int? ?? result['markId'] as int?;
+          if (newMarkId != null) (_markIds[cadetId] ??= {})[lessonId] = newMarkId;
+        } catch (e) {
+          if (_isServerDown(e)) { await _enqueueServerDown(op); return; }
+          rethrow;
         }
       }
+      if (value != null) _notifyGradeSaved(lesson, value, cadetName);
     } catch (e) {
       state = state.copyWith(error: e.toString());
     }
+  }
+
+  void _notifyGradeSaved(LessonModel lesson, double value, String cadetName) {
+    final discPrefix = _disciplineName.isNotEmpty ? '$_disciplineName\n' : '';
+    final lessonLabel = lesson.code.isNotEmpty ? lesson.code : 'Заняття ${lesson.id}';
+    final maxStr = lesson.maxScore > 0 ? '${lesson.maxScore.toInt()}' : '?';
+    _notifService.show(
+      id: (cadetName.hashCode ^ lesson.id).abs() % 65535,
+      title: 'Оцінку збережено',
+      body: '$discPrefix$lessonLabel: ${value.toInt()} / $maxStr балів\n$cadetName',
+    );
   }
 
   // ── Збереження відвідуваності (create / update / delete) ──────────────────
@@ -411,25 +525,52 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     state = state.copyWith(isSyncing: true, syncMessage: null);
     try {
       for (final rec in toCreate) {
-        final created = await _attendsRepo.createAttend(rec);
-        final aId = created['id'] as int? ?? created['attendId'] as int?;
-        final cId = rec['cadetId'] as int?;
-        final lId = rec['lessonId'] as int?;
-        if (aId != null && cId != null && lId != null) {
-          (_attendIds[cId] ??= {})[lId] = aId;
+        final op = PendingOp(
+          id: 'att_new_${rec['cadetId']}_${rec['lessonId']}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'POST', path: '/attends', data: rec, createdAt: DateTime.now(),
+        );
+        try {
+          final created = await _attendsRepo.createAttend(rec);
+          final aId = created['id'] as int? ?? created['attendId'] as int?;
+          final cId = rec['cadetId'] as int?;
+          final lId = rec['lessonId'] as int?;
+          if (aId != null && cId != null && lId != null) {
+            (_attendIds[cId] ??= {})[lId] = aId;
+          }
+        } catch (e) {
+          if (_isServerDown(e)) { await _enqueueServerDown(op); continue; }
+          rethrow;
         }
       }
       for (final rec in toUpdate) {
-        await _attendsRepo.updateAttend(
-          rec['attendId'] as int,
-          {'attended': rec['attended']},
+        final op = PendingOp(
+          id: 'att_upd_${rec['attendId']}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'PATCH', path: '/attends/${rec['attendId']}',
+          data: {'attended': rec['attended']}, createdAt: DateTime.now(),
         );
+        try {
+          await _attendsRepo.updateAttend(
+            rec['attendId'] as int,
+            {'attended': rec['attended']},
+          );
+        } catch (e) {
+          if (_isServerDown(e)) { await _enqueueServerDown(op); continue; }
+          rethrow;
+        }
       }
       for (final aId in toDelete) {
-        await _attendsRepo.deleteAttend(aId);
-        // Remove from session cache
-        for (final lessonMap in _attendIds.values) {
-          lessonMap.removeWhere((_, v) => v == aId);
+        final op = PendingOp(
+          id: 'att_del_${aId}_${DateTime.now().millisecondsSinceEpoch}',
+          method: 'DELETE', path: '/attends/$aId', data: {}, createdAt: DateTime.now(),
+        );
+        try {
+          await _attendsRepo.deleteAttend(aId);
+          for (final lessonMap in _attendIds.values) {
+            lessonMap.removeWhere((_, v) => v == aId);
+          }
+        } catch (e) {
+          if (_isServerDown(e)) { await _enqueueServerDown(op); continue; }
+          rethrow;
         }
       }
       state = state.copyWith(isSyncing: false, syncMessage: '✓ Відвідуваність збережено ($total)');
@@ -443,11 +584,14 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
 
 final gradeJournalViewModelProvider =
     StateNotifierProvider<GradeJournalViewModel, JournalState>((ref) {
+  final auth = ref.read(authViewModelProvider);
   return GradeJournalViewModel(
     ref.read(gradesRepositoryProvider),
     ref.read(attendsRepositoryProvider),
     ref.read(localCacheProvider),
     ref.read(networkMonitorProvider),
     ref.read(offlineQueueProvider.notifier),
+    ref.read(notificationServiceProvider),
+    auth.role ?? '',
   );
 });

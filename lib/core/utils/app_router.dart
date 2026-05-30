@@ -206,6 +206,7 @@ bool _roleHasDisciplines(String role) =>
     role == UserRole.superAdmin;
 
 bool _roleHasJournals(String role) =>
+    role == UserRole.departmentHead ||
     role == UserRole.facultyEducation ||
     role == UserRole.instituteEducation ||
     role == UserRole.superAdmin;

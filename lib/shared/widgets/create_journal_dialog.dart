@@ -5,6 +5,240 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/repositories.dart';
 import '../theme/app_theme.dart';
 
+// ── Edit Journal Sheet ────────────────────────────────────────────────────────
+
+Future<void> showEditJournalSheet(
+  BuildContext context, {
+  required int journalId,
+  String? driveLink,
+  String? meetLink,
+  String? moodleLink,
+  VoidCallback? onUpdated,
+}) {
+  return showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => EditJournalSheet(
+      journalId: journalId,
+      initialDriveLink: driveLink,
+      initialMeetLink: meetLink,
+      initialMoodleLink: moodleLink,
+      onUpdated: onUpdated,
+    ),
+  );
+}
+
+class EditJournalSheet extends ConsumerStatefulWidget {
+  final int journalId;
+  final String? initialDriveLink;
+  final String? initialMeetLink;
+  final String? initialMoodleLink;
+  final VoidCallback? onUpdated;
+  const EditJournalSheet({
+    super.key,
+    required this.journalId,
+    this.initialDriveLink,
+    this.initialMeetLink,
+    this.initialMoodleLink,
+    this.onUpdated,
+  });
+
+  @override
+  ConsumerState<EditJournalSheet> createState() => _EditJournalSheetState();
+}
+
+class _EditJournalSheetState extends ConsumerState<EditJournalSheet> {
+  late TextEditingController _driveCtrl;
+  late TextEditingController _meetCtrl;
+  late TextEditingController _moodleCtrl;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _driveCtrl  = TextEditingController(text: widget.initialDriveLink ?? '');
+    _meetCtrl   = TextEditingController(text: widget.initialMeetLink ?? '');
+    _moodleCtrl = TextEditingController(text: widget.initialMoodleLink ?? '');
+  }
+
+  @override
+  void dispose() {
+    _driveCtrl.dispose();
+    _meetCtrl.dispose();
+    _moodleCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() => _submitting = true);
+    try {
+      final drive  = _driveCtrl.text.trim();
+      final meet   = _meetCtrl.text.trim();
+      final moodle = _moodleCtrl.text.trim();
+      await ref.read(journalsRepositoryProvider).updateJournal(widget.journalId, {
+        'driveLink':  drive.isEmpty  ? null : drive,
+        'meetLink':   meet.isEmpty   ? null : meet,
+        'moodleLink': moodle.isEmpty ? null : moodle,
+      });
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onUpdated?.call();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Журнал оновлено'),
+          backgroundColor: Color(0xFF16A34A),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Помилка: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 8, 12),
+            child: Row(children: [
+              const Expanded(
+                child: Text('Редагувати журнал',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, color: AppTheme.textMid),
+              ),
+            ]),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _LinkLabel(icon: Icons.folder, label: 'Google Drive', color: const Color(0xFF2E7D32)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _driveCtrl,
+                    keyboardType: TextInputType.url,
+                    decoration: _linkDec('https://drive.google.com/...'),
+                  ),
+                  const SizedBox(height: 16),
+                  _LinkLabel(icon: Icons.videocam, label: 'Google Meet', color: const Color(0xFF1565C0)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _meetCtrl,
+                    keyboardType: TextInputType.url,
+                    decoration: _linkDec('https://meet.google.com/...'),
+                  ),
+                  const SizedBox(height: 16),
+                  _LinkLabel(icon: Icons.school, label: 'Moodle', color: const Color(0xFFE65100)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _moodleCtrl,
+                    keyboardType: TextInputType.url,
+                    decoration: _linkDec('https://moodle...'),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, 14, 20, bottom + 20),
+            child: Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _submitting ? null : () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textDark,
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Скасувати'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: _submitting ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: _submitting
+                      ? const SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Зберегти', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _linkDec(String hint) => InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(color: AppTheme.textMid, fontSize: 13),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.primary, width: 1.5)),
+  );
+}
+
+class _LinkLabel extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _LinkLabel({required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Icon(icon, size: 16, color: color),
+      const SizedBox(width: 6),
+      Text(label,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+    ]);
+  }
+}
+
 class CreateJournalDialog extends ConsumerStatefulWidget {
   final int disciplineId;
   final String disciplineName;

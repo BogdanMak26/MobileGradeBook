@@ -169,11 +169,16 @@ class _AddDisciplineSheetState extends ConsumerState<AddDisciplineSheet> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _submitting = true);
     try {
-      await ref.read(disciplinesRepositoryProvider).createDiscipline({
+      final disc = await ref.read(disciplinesRepositoryProvider).createDiscipline({
         'fullName':  _fullNameCtrl.text.trim(),
         'shortName': _shortNameCtrl.text.trim(),
         'kafedraId': _kafedraId,
       });
+      if (_teacherId != null) {
+        try {
+          await ref.read(disciplinesRepositoryProvider).addTeacher(disc.id, _teacherId!);
+        } catch (_) {}
+      }
       if (mounted) {
         Navigator.pop(context);
         widget.onCreated?.call();
@@ -466,4 +471,215 @@ class _FieldLabel extends StatelessWidget {
       if (required) const Text(' *', style: TextStyle(color: Colors.red, fontSize: 14)),
     ]);
   }
+}
+
+// ── Edit Discipline Sheet ─────────────────────────────────────────────────────
+
+Future<void> showEditDisciplineSheet(
+  BuildContext context, {
+  required int disciplineId,
+  required String name,
+  required String shortName,
+  VoidCallback? onUpdated,
+}) {
+  return showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => EditDisciplineSheet(
+      disciplineId: disciplineId,
+      initialName: name,
+      initialShortName: shortName,
+      onUpdated: onUpdated,
+    ),
+  );
+}
+
+class EditDisciplineSheet extends ConsumerStatefulWidget {
+  final int disciplineId;
+  final String initialName;
+  final String initialShortName;
+  final VoidCallback? onUpdated;
+  const EditDisciplineSheet({
+    super.key,
+    required this.disciplineId,
+    required this.initialName,
+    required this.initialShortName,
+    this.onUpdated,
+  });
+
+  @override
+  ConsumerState<EditDisciplineSheet> createState() => _EditDisciplineSheetState();
+}
+
+class _EditDisciplineSheetState extends ConsumerState<EditDisciplineSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameCtrl;
+  late TextEditingController _shortCtrl;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl  = TextEditingController(text: widget.initialName);
+    _shortCtrl = TextEditingController(text: widget.initialShortName);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _shortCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _submitting = true);
+    try {
+      await ref.read(disciplinesRepositoryProvider).updateDiscipline(
+        widget.disciplineId,
+        {'fullName': _nameCtrl.text.trim(), 'shortName': _shortCtrl.text.trim()},
+      );
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onUpdated?.call();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Дисципліну оновлено'),
+          backgroundColor: Color(0xFF16A34A),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Помилка: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 8, 12),
+            child: Row(children: [
+              const Expanded(
+                child: Text('Редагувати дисципліну',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, color: AppTheme.textMid),
+              ),
+            ]),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _FieldLabel('Повна назва дисципліни', required: true),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _nameCtrl,
+                      maxLines: 2,
+                      decoration: _edDec('Введіть повну назву'),
+                      validator: (v) => (v?.trim().isEmpty ?? true) ? 'Обов\'язкове поле' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _FieldLabel('Скорочена назва', required: true),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _shortCtrl,
+                      decoration: _edDec('Напр. ТСА'),
+                      validator: (v) {
+                        if (v?.trim().isEmpty ?? true) return 'Обов\'язкове поле';
+                        if (v!.trim().length > 10) return 'Максимум 10 символів';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, 14, 20, bottom + 20),
+            child: Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _submitting ? null : () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textDark,
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Скасувати'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: _submitting ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: _submitting
+                      ? const SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Зберегти зміни',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _edDec(String hint) => InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(color: AppTheme.textMid, fontSize: 13),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.primary, width: 1.5)),
+    errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.red)),
+    focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.red, width: 1.5)),
+  );
 }

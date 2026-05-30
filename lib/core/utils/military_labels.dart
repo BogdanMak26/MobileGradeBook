@@ -2,63 +2,70 @@
 
 abstract class MilitaryLabels {
   static const _ranks = <String, String>{
-    'CADET': 'Курсант',
-    'SOLDIER': 'Рядовий',
-    'PRIVATE': 'Рядовий',
-    'JUNIOR_SERGEANT': 'Молодший сержант',
-    'SERGEANT': 'Сержант',
-    'SENIOR_SERGEANT': 'Старший сержант',
-    'MASTER_SERGEANT': 'Головний сержант',
-    'ENSIGN': 'Прапорщик',
-    'SENIOR_ENSIGN': 'Старший прапорщик',
-    'JUNIOR_LIEUTENANT': 'Молодший лейтенант',
-    'LIEUTENANT': 'Лейтенант',
-    'SENIOR_LIEUTENANT': 'Старший лейтенант',
-    'CAPTAIN': 'Капітан',
-    'MAJOR': 'Майор',
-    'LIEUTENANT_COLONEL': 'Підполковник',
-    'COLONEL': 'Полковник',
-    'MAJOR_GENERAL': 'Генерал-майор',
-    'LIEUTENANT_GENERAL': 'Генерал-лейтенант',
-    'GENERAL': 'Генерал',
+    'CADET':                  'Курсант',
+    'CIVILIAN':               'Працівник ЗСУ',
+    'SOLDIER':                'Солдат',
+    'PRIVATE':                'Рядовий',
+    'SENIOR_SOLDIER':         'Старший солдат',
+    'JUNIOR_SERGEANT':        'Молодший сержант',
+    'SERGEANT':               'Сержант',
+    'SENIOR_SERGEANT':        'Старший сержант',
+    'CHIEF_SERGEANT':         'Головний сержант',
+    'STAFF_SERGEANT':         'Штаб-сержант',
+    'MASTER_SERGEANT':        'Майстер-сержант',
+    'SENIOR_MASTER_SERGEANT': 'Старший майстер-сержант',
+    'CHIEF_MASTER_SERGEANT':  'Головний майстер-сержант',
+    'ENSIGN':                 'Прапорщик',
+    'SENIOR_ENSIGN':          'Старший прапорщик',
+    'JUNIOR_LIEUTENANT':      'Молодший лейтенант',
+    'LIEUTENANT':             'Лейтенант',
+    'SENIOR_LIEUTENANT':      'Старший лейтенант',
+    'CAPTAIN':                'Капітан',
+    'MAJOR':                  'Майор',
+    'LIEUTENANT_COLONEL':     'Підполковник',
+    'COLONEL':                'Полковник',
+    'BRIGADIER_GENERAL':      'Бригадний генерал',
+    'MAJOR_GENERAL':          'Генерал-майор',
+    'LIEUTENANT_GENERAL':     'Генерал-лейтенант',
+    'GENERAL':                'Генерал',
   };
 
   // Matches server enum: entity/Position.java
   static const _positions = <String, String>{
-    'CADET': 'Курсант',
-    'LISTENER': 'Слухач',
-    'JOURNALIST': 'Журналіст',
-    'SQUAD_COMMANDER': 'Командир відділення',
-    'GROUP_COMMANDER': 'Командир групи',
-    'COMPANY_MASTER_SERGEANT': 'Старшина роти',
-    'TEACHER': 'Викладач',
-    'SENIOR_TEACHER': 'Старший викладач',
-    'DOCENT': 'Доцент',
-    'PROFESSOR': 'Професор',
-    'DEPUTY_HEAD_OF_KAFEDRA': 'Заст. нач. кафедри',
-    'HEAD_OF_KAFEDRA': 'Начальник кафедри',
-    'HEAD_OF_FACULTY': 'Начальник факультету',
-    'HEAD_OF_EDUCATION_DEPARTMENT': 'Нач. навч. відділу',
-    'DEPUTY_HEAD_OF_EDUCATION_DEPARTMENT': 'Заст. нач. навч. відділу',
-    'DEPUTY_HEAD_OF_INSTITUTE_FOR_ACADEMIC_WORK': 'Заст. нач. ін-ту з НР',
-    'HEAD_OF_EDUCATION_QUALITY_CONTROL_DEPARTMENT': 'Нач. відділу контролю якості',
-    'MASTER_OFFICER': 'Офіцер-вихователь',
-    'DEPUTY_HEAD_OF_NV': 'Заст. нач. НВ',
-    'SENIOR_ASSISTANT_HEAD_OF_NV': 'Ст. помічник нач. НВ',
-    'ASSISTANT_HEAD_OF_NV': 'Помічник нач. НВ',
-    'HEAD_OF_GOSDN': 'Нач. ГОСДН',
-    'SENIOR_OFFICER_GOSDN': 'Ст. офіцер ГОСДН',
-    'HEAD_OF_NM_OFFICE': 'Нач. НМВ',
-    'METHODIST_NMK': 'Методист НМК',
-    'DEPUTY_HEAD_OF_FACULTY_FOR_ACADEMIC_WORK': 'Заст. нач. фак. з НР',
-    'HEAD_OF_ZYAODVO_DEPARTMENT': 'Нач. відділу ЗЯОДВО',
-    'LEADING_RESEARCH_FELLOW': 'Пров. наук. співробітник',
-    'SENIOR_RESEARCH_FELLOW': 'Ст. наук. співробітник',
-    'SENIOR_ASSISTANT': 'Старший асистент',
-    'HEAD_OF_TRAINING_COURSE': 'Нач. навч. курсу',
-    'COURSE_OFFICER': 'Офіцер курсу',
-    'HEAD_OF_INSTITUTE': 'Начальник інституту',
-    'DEPUTY_HEAD_OF_INSTITUTE_FOR_LOGISTICS': 'Заст. нач. ін-ту з логістики',
+    'CADET':                                         'Курсант',
+    'LISTENER':                                      'Слухач',
+    'JOURNALIST':                                    'Журналіст',
+    'SQUAD_COMMANDER':                               'Командир відділення',
+    'GROUP_COMMANDER':                               'Командир групи',
+    'COMPANY_MASTER_SERGEANT':                       'Головний сержант курсу',
+    'HEAD_OF_TRAINING_COURSE':                       'Начальник навчального курсу',
+    'COURSE_OFFICER':                                'Курсовий офіцер',
+    'SENIOR_ASSISTANT':                              'Старший помічник',
+    'TEACHER':                                       'Викладач',
+    'SENIOR_TEACHER':                                'Старший викладач',
+    'DOCENT':                                        'Доцент',
+    'PROFESSOR':                                     'Професор',
+    'DEPUTY_HEAD_OF_KAFEDRA':                        'Заступник начальника кафедри',
+    'HEAD_OF_KAFEDRA':                               'Начальник кафедри',
+    'LEADING_RESEARCH_FELLOW':                       'Провідний науковий співробітник',
+    'SENIOR_RESEARCH_FELLOW':                        'Старший науковий співробітник',
+    'DEPUTY_HEAD_OF_FACULTY_FOR_ACADEMIC_WORK':      'Заступник начальника факультету з навчальної роботи',
+    'HEAD_OF_FACULTY':                               'Начальник факультету',
+    'DEPUTY_HEAD_OF_NV':                             'Заступник начальника НВ',
+    'SENIOR_ASSISTANT_HEAD_OF_NV':                   'Ст. помічник начальника НВ',
+    'ASSISTANT_HEAD_OF_NV':                          'Помічник начальника НВ',
+    'DEPUTY_HEAD_OF_EDUCATION_DEPARTMENT':           'Заступник начальника навчального відділу',
+    'HEAD_OF_EDUCATION_DEPARTMENT':                  'Начальник навчального відділу',
+    'HEAD_OF_GOSDN':                                 'Начальник ГОСДН',
+    'SENIOR_OFFICER_GOSDN':                          'Ст.офіцер ГОСДН',
+    'HEAD_OF_NM_OFFICE':                             'Завідувач НМ кабінетом',
+    'METHODIST_NMK':                                 'Методист НМК',
+    'HEAD_OF_INSTITUTE':                             'Начальник інституту',
+    'DEPUTY_HEAD_OF_INSTITUTE_FOR_ACADEMIC_WORK':    'Заступник начальника інституту з навчальної роботи',
+    'DEPUTY_HEAD_OF_INSTITUTE_FOR_LOGISTICS':        'ЗНІ з логістики',
+    'HEAD_OF_EDUCATION_QUALITY_CONTROL_DEPARTMENT':  'Начальник відділу контролю якості освіти',
+    'HEAD_OF_ZYAODVO_DEPARTMENT':                    'Начальник відділу ЗЯОДВО',
+    'MASTER_OFFICER':                                'Офіцер-вихователь',
   };
 
   // Matches server enum: entity/Speciality.java
@@ -100,6 +107,22 @@ abstract class MilitaryLabels {
 
   static String position(String? code) =>
       code == null ? '—' : _positions[code] ?? _toReadable(code);
+
+  static String? rankCode(String? displayName) {
+    if (displayName == null) return null;
+    for (final e in _ranks.entries) {
+      if (e.value == displayName) return e.key;
+    }
+    return null;
+  }
+
+  static String? positionCode(String? displayName) {
+    if (displayName == null) return null;
+    for (final e in _positions.entries) {
+      if (e.value == displayName) return e.key;
+    }
+    return null;
+  }
 
   static String speciality(String? code) =>
       code == null ? '—' : _specialities[code] ?? _toReadable(code);

@@ -26,6 +26,9 @@ class _CadetGradesPageState extends ConsumerState<CadetGradesPage>
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
+  Future<void> _onRefresh() =>
+      ref.read(cadetGradesViewModelProvider.notifier).load();
+
   @override
   Widget build(BuildContext context) {
     final vmState = ref.watch(cadetGradesViewModelProvider);
@@ -45,13 +48,6 @@ class _CadetGradesPageState extends ConsumerState<CadetGradesPage>
         ? 0
         : (attendanceValues.reduce((a, b) => a + b) / attendanceValues.length).round();
 
-    if (vmState.isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Мої оцінки')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Мої оцінки'),
@@ -66,20 +62,23 @@ class _CadetGradesPageState extends ConsumerState<CadetGradesPage>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tab,
-        children: [
-          _GradesList(grades: grades),
-          _StatsView(grades: grades, avg: avg, avgAttendancePct: avgAttendancePct),
-        ],
-      ),
+      body: vmState.isLoading && grades.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tab,
+              children: [
+                _GradesList(grades: grades, onRefresh: _onRefresh),
+                _StatsView(grades: grades, avg: avg, avgAttendancePct: avgAttendancePct, onRefresh: _onRefresh),
+              ],
+            ),
     );
   }
 }
 
 class _GradesList extends StatelessWidget {
   final List<Map<String, dynamic>> grades;
-  const _GradesList({required this.grades});
+  final Future<void> Function() onRefresh;
+  const _GradesList({required this.grades, required this.onRefresh});
 
   Color _scoreColor(int? score) {
     if (score == null) return Colors.grey;
@@ -92,15 +91,25 @@ class _GradesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (grades.isEmpty) {
-      return const Center(
-        child: Text('Немає даних про оцінки',
-            style: TextStyle(color: AppTheme.textMid)),
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            SizedBox(height: 120),
+            Center(child: Text('Немає даних про оцінки',
+                style: TextStyle(color: AppTheme.textMid))),
+          ],
+        ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: grades.length,
-      itemBuilder: (context, i) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: grades.length,
+        itemBuilder: (context, i) {
         final g = grades[i];
         final score = g['score'] as int?;
         final attendancePct = g['attendancePercentage'] as int? ?? 100;
@@ -189,7 +198,8 @@ class _GradesList extends StatelessWidget {
           ),
         );
       },
-    );
+    ),
+  );
   }
 }
 
@@ -223,10 +233,12 @@ class _StatsView extends StatelessWidget {
   final List<Map<String, dynamic>> grades;
   final double avg;
   final int avgAttendancePct;
+  final Future<void> Function() onRefresh;
   const _StatsView(
       {required this.grades,
       required this.avg,
-      required this.avgAttendancePct});
+      required this.avgAttendancePct,
+      required this.onRefresh});
 
   List<Widget> _buildDisciplineCards() {
     return grades.map((g) {
@@ -316,7 +328,10 @@ class _StatsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -350,6 +365,7 @@ class _StatsView extends StatelessWidget {
           ..._buildDisciplineCards(),
         ],
       ),
+    ),
     );
   }
 

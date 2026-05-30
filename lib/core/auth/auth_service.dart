@@ -111,6 +111,8 @@ class AuthService {
   final FlutterSecureStorage _storage;
   final Dio _dio;
 
+  static const _userProfileKey = 'cached_user_profile';
+
   AuthService()
       : _storage = const FlutterSecureStorage(
           aOptions: AndroidOptions(
@@ -124,6 +126,22 @@ class AuthService {
               const Duration(seconds: AppConstants.connectionTimeoutSeconds),
         ));
 
+  // ── Кеш профілю користувача ───────────────────────────────────────────────
+
+  Future<void> saveUserProfile(Map<String, dynamic> data) async {
+    await _storage.write(key: _userProfileKey, value: jsonEncode(data));
+  }
+
+  Future<Map<String, dynamic>?> getCachedUserProfile() async {
+    final raw = await _storage.read(key: _userProfileKey);
+    if (raw == null) return null;
+    return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  Future<void> clearUserProfile() async {
+    await _storage.delete(key: _userProfileKey);
+  }
+
   // ── Отримати токен (з кешу або оновити) ──────────────────────────────────
 
   Future<String?> getValidAccessToken() async {
@@ -134,12 +152,26 @@ class AuthService {
       try {
         final newTokens = await refreshTokens(tokens.refreshToken);
         return newTokens.accessToken;
+      } on DioException catch (e) {
+        if (_isNetworkError(e)) {
+          // Без інтернету — зберігаємо токени (не очищаємо)
+          return null;
+        }
+        await clearTokens();
+        return null;
       } catch (_) {
         await clearTokens();
         return null;
       }
     }
     return tokens.accessToken;
+  }
+
+  static bool _isNetworkError(DioException e) {
+    return e.type == DioExceptionType.connectionError ||
+        e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout;
   }
 
   // ── Зберегти токени ───────────────────────────────────────────────────────
@@ -349,6 +381,13 @@ class AuthService {
     try {
       await refreshTokens(tokens.refreshToken);
       return true;
+    } on DioException catch (e) {
+      if (_isNetworkError(e)) {
+        // Без інтернету — показати екран розблокування якщо є кешований профіль
+        final profile = await getCachedUserProfile();
+        return profile != null;
+      }
+      return false;
     } catch (_) {
       return false;
     }

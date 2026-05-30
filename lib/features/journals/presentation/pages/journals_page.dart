@@ -3,25 +3,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/repositories.dart';
+import '../../../../core/local/local_cache.dart';
+import '../../../../core/network/network_monitor.dart';
+import '../../../../core/utils/app_constants.dart';
+import '../../../../features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../../../features/disciplines/data/models/discipline_model.dart';
 import '../../../../features/disciplines/data/models/journal_model.dart';
 import '../../../../features/disciplines/data/repositories/disciplines_repository.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/add_discipline_sheet.dart';
-import '../../../../shared/widgets/create_journal_dialog.dart';
+import '../../../../shared/widgets/create_journal_dialog.dart'
+    show CreateJournalDialog, showEditJournalSheet;
 import '../../../grades/presentation/pages/grade_journal_page.dart';
 
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
-class JournalsPage extends StatefulWidget {
+class JournalsPage extends ConsumerStatefulWidget {
   const JournalsPage({super.key});
 
   @override
-  State<JournalsPage> createState() => _JournalsPageState();
+  ConsumerState<JournalsPage> createState() => _JournalsPageState();
 }
 
-class _JournalsPageState extends State<JournalsPage>
+class _JournalsPageState extends ConsumerState<JournalsPage>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
 
@@ -36,6 +41,31 @@ class _JournalsPageState extends State<JournalsPage>
 
   @override
   Widget build(BuildContext context) {
+    final auth = ref.watch(authViewModelProvider);
+    final isDeptHead = auth.role == UserRole.departmentHead;
+
+    if (isDeptHead) {
+      final kafedraId = auth.kafedraId;
+      final kafedraName = auth.kafedraName ?? 'Кафедра';
+      if (kafedraId == null) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Електронний журнал'),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(3),
+              child: Container(height: 3, color: AppTheme.primary),
+            ),
+          ),
+          body: const Center(child: Text('Не вдалося визначити кафедру')),
+        );
+      }
+      return _KafedraDisciplinesPage(
+        kafedraId: kafedraId,
+        kafedraName: kafedraName,
+        isRoot: true,
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Електронний журнал'),
@@ -102,14 +132,32 @@ class _KafedrasTabState extends ConsumerState<_KafedrasTab> {
 
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+
+    const cacheKey = 'kafedras_list';
+    final cachedRaw = cache.get<List<dynamic>>(cacheKey);
+    if (cachedRaw != null) {
+      setState(() { _kafedras = cachedRaw.cast<Map<String, dynamic>>(); });
+    }
+
+    if (!network.isOnline) {
+      setState(() { _isLoading = false; });
+      return;
+    }
+
     try {
       final raw = await ref.read(kafedrasRepositoryProvider).getKafedras();
+      await cache.set(cacheKey, raw);
       setState(() {
         _kafedras = raw.map((e) => e as Map<String, dynamic>).toList();
         _isLoading = false;
       });
     } catch (e) {
-      setState(() { _isLoading = false; _error = e.toString(); });
+      setState(() {
+        _isLoading = false;
+        if (cachedRaw == null) _error = e.toString();
+      });
     }
   }
 
@@ -133,7 +181,10 @@ class _KafedrasTabState extends ConsumerState<_KafedrasTab> {
         ),
       );
     }
-    return ListView.builder(
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       itemCount: _kafedras.length,
       itemBuilder: (context, i) {
@@ -160,6 +211,7 @@ class _KafedrasTabState extends ConsumerState<_KafedrasTab> {
           },
         );
       },
+      ),
     );
   }
 }
@@ -184,37 +236,58 @@ class _CoursesTabState extends ConsumerState<_CoursesTab> {
 
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+
+    const cacheKey = 'groups_list';
+    List<dynamic>? cachedRaw = cache.get<List<dynamic>>(cacheKey);
+    if (cachedRaw != null) {
+      _applyGroups(cachedRaw);
+    }
+
+    if (!network.isOnline) {
+      setState(() { _isLoading = false; });
+      return;
+    }
+
     try {
       final raw = await ref.read(groupsRepositoryProvider).getGroups();
-      final grouped = <String, List<Map<String, dynamic>>>{};
-      for (final item in raw) {
-        final g = item as Map<String, dynamic>;
-        final course = g['courseNumber'] as int? ?? 0;
-        final degree = (g['educationDegree'] as String?) ?? 'BACHELOR';
-        final key = '${course}_$degree';
-        grouped.putIfAbsent(key, () => []).add(g);
-      }
-      // Sort: bachelor (1–4) first, then master (1м, 2м), each ascending by courseNumber
-      final sorted = Map.fromEntries(
-        grouped.entries.toList()
-          ..sort((a, b) {
-            final aParts = a.key.split('_');
-            final bParts = b.key.split('_');
-            final aDeg = aParts.sublist(1).join('_');
-            final bDeg = bParts.sublist(1).join('_');
-            final aC = int.tryParse(aParts[0]) ?? 0;
-            final bC = int.tryParse(bParts[0]) ?? 0;
-            if (aDeg != bDeg) {
-              if (aDeg == 'MASTER') return 1;
-              if (bDeg == 'MASTER') return -1;
-            }
-            return aC.compareTo(bC);
-          }),
-      );
-      setState(() { _byCourse = sorted; _isLoading = false; });
+      await cache.set(cacheKey, raw);
+      _applyGroups(raw);
     } catch (e) {
-      setState(() { _isLoading = false; _error = e.toString(); });
+      setState(() {
+        _isLoading = false;
+        if (cachedRaw == null) _error = e.toString();
+      });
     }
+  }
+
+  void _applyGroups(List<dynamic> raw) {
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final item in raw) {
+      final g = item as Map<String, dynamic>;
+      final course = g['courseNumber'] as int? ?? 0;
+      final degree = (g['educationDegree'] as String?) ?? 'BACHELOR';
+      final key = '${course}_$degree';
+      grouped.putIfAbsent(key, () => []).add(g);
+    }
+    final sorted = Map.fromEntries(
+      grouped.entries.toList()
+        ..sort((a, b) {
+          final aParts = a.key.split('_');
+          final bParts = b.key.split('_');
+          final aDeg = aParts.sublist(1).join('_');
+          final bDeg = bParts.sublist(1).join('_');
+          final aC = int.tryParse(aParts[0]) ?? 0;
+          final bC = int.tryParse(bParts[0]) ?? 0;
+          if (aDeg != bDeg) {
+            if (aDeg == 'MASTER') return 1;
+            if (bDeg == 'MASTER') return -1;
+          }
+          return aC.compareTo(bC);
+        }),
+    );
+    setState(() { _byCourse = sorted; _isLoading = false; });
   }
 
   @override
@@ -234,7 +307,10 @@ class _CoursesTabState extends ConsumerState<_CoursesTab> {
     }
 
     final entries = _byCourse.entries.toList();
-    return ListView.builder(
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       itemCount: entries.length,
       itemBuilder: (context, i) {
@@ -309,6 +385,7 @@ class _CoursesTabState extends ConsumerState<_CoursesTab> {
           ),
         );
       },
+      ),
     );
   }
 }
@@ -509,24 +586,51 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
 
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+
+    final journalsCacheKey = 'group_journals_${widget.groupId}';
+    final discsCacheKey = 'all_disciplines';
+    final cachedJournals = cache.get<List<dynamic>>(journalsCacheKey);
+    final cachedDiscs = cache.get<List<dynamic>>(discsCacheKey);
+
+    if (cachedJournals != null) {
+      final journals = cachedJournals
+          .map((e) => JournalModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      final map = <String, int>{};
+      if (cachedDiscs != null) {
+        for (final e in cachedDiscs) {
+          final d = DisciplineModel.fromJson(e as Map<String, dynamic>);
+          map[d.fullName] = d.id;
+          if (d.shortName != null && d.shortName!.isNotEmpty) map[d.shortName!] = d.id;
+        }
+      }
+      setState(() { _journals = journals; _discIdByName = map; });
+    }
+
+    if (!network.isOnline) {
+      setState(() { _isLoading = false; });
+      return;
+    }
+
     try {
       final repo = ref.read(disciplinesRepositoryProvider);
-      final journalsFuture = repo.getGroupJournals(widget.groupId);
-      final discsFuture = repo.getAllDisciplines();
-      final journals = await journalsFuture;
-      final allDiscs = await discsFuture;
+      final journals = await repo.getGroupJournals(widget.groupId);
+      final allDiscs = await repo.getAllDisciplines();
+      await cache.set(journalsCacheKey, journals.map((j) => j.toJson()).toList());
+      await cache.set(discsCacheKey, allDiscs.map((d) => d.toJson()).toList());
       final map = <String, int>{};
       for (final d in allDiscs) {
         map[d.fullName] = d.id;
         if (d.shortName != null && d.shortName!.isNotEmpty) map[d.shortName!] = d.id;
       }
-      setState(() {
-        _journals = journals;
-        _discIdByName = map;
-        _isLoading = false;
-      });
+      setState(() { _journals = journals; _discIdByName = map; _isLoading = false; });
     } catch (e) {
-      setState(() { _isLoading = false; _error = e.toString(); });
+      setState(() {
+        _isLoading = false;
+        if (cachedJournals == null) _error = e.toString();
+      });
     }
   }
 
@@ -608,7 +712,10 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: filtered.length + 1,
                     itemBuilder: (context, i) {
@@ -687,6 +794,20 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
                                 )
                               else
                                 const Icon(Icons.school, color: AppTheme.primary, size: 22),
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined,
+                                    color: AppTheme.textMid, size: 18),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () => showEditJournalSheet(
+                                  context,
+                                  journalId: j.id,
+                                  driveLink: j.driveLink,
+                                  meetLink: j.meetLink,
+                                  moodleLink: j.moodleLink,
+                                  onUpdated: _load,
+                                ),
+                              ),
                             ]),
                             const SizedBox(height: 12),
                             Align(
@@ -722,6 +843,7 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
                       );
                     },
                   ),
+            ),
           ),
         ],
       ),
@@ -734,8 +856,12 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
 class _KafedraDisciplinesPage extends ConsumerStatefulWidget {
   final int kafedraId;
   final String kafedraName;
-  const _KafedraDisciplinesPage(
-      {required this.kafedraId, required this.kafedraName});
+  final bool isRoot;
+  const _KafedraDisciplinesPage({
+    required this.kafedraId,
+    required this.kafedraName,
+    this.isRoot = false,
+  });
 
   @override
   ConsumerState<_KafedraDisciplinesPage> createState() =>
@@ -757,18 +883,38 @@ class _KafedraDisciplinesPageState
 
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+
+    final cacheKey = 'kafedra_disciplines_${widget.kafedraId}';
+    final cachedRaw = cache.get<List<dynamic>>(cacheKey);
+    if (cachedRaw != null) {
+      setState(() {
+        _disciplines = cachedRaw
+            .map((e) => DisciplineModel.fromJson(e as Map<String, dynamic>))
+            .toList();
+      });
+    }
+
+    if (!network.isOnline) {
+      setState(() { _isLoading = false; });
+      return;
+    }
+
     try {
       final raw = await ref
           .read(disciplinesRepositoryProvider)
           .getAllDisciplines(kafedraId: widget.kafedraId);
+      await cache.set(cacheKey, raw.map((d) => d.toJson()).toList());
       setState(() {
-        _disciplines = raw
-            .where((d) => d.kafedraId == widget.kafedraId)
-            .toList();
+        _disciplines = raw.where((d) => d.kafedraId == widget.kafedraId).toList();
         _isLoading = false;
       });
     } catch (e) {
-      setState(() { _isLoading = false; _error = e.toString(); });
+      setState(() {
+        _isLoading = false;
+        if (cachedRaw == null) _error = e.toString();
+      });
     }
   }
 
@@ -828,17 +974,18 @@ class _KafedraDisciplinesPageState
       ),
       body: Column(
         children: [
-          TextButton.icon(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.chevron_left, size: 18),
-            label: const Text('До списку кафедр'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppTheme.textMid,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          if (!widget.isRoot)
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.chevron_left, size: 18),
+              label: const Text('До списку кафедр'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.textMid,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              ),
             ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            padding: EdgeInsets.fromLTRB(16, widget.isRoot ? 12 : 4, 16, 8),
             child: Text(
               'Дисципліни — ${widget.kafedraName}',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -870,7 +1017,10 @@ class _KafedraDisciplinesPageState
             ]),
           ),
           Expanded(
-            child: ListView.builder(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               itemCount: filtered.length + 1,
               itemBuilder: (context, i) {
@@ -899,6 +1049,7 @@ class _KafedraDisciplinesPageState
                   ),
                 );
               },
+              ),
             ),
           ),
         ],
@@ -936,16 +1087,34 @@ class _DisciplineJournalListPageState
 
   Future<void> _load() async {
     setState(() { _isLoading = true; _error = null; });
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+
+    final cacheKey = 'discipline_journals_${widget.disciplineId}';
+    final cachedRaw = cache.get<List<dynamic>>(cacheKey);
+    if (cachedRaw != null) {
+      setState(() {
+        _journals = cachedRaw
+            .map((e) => JournalModel.fromJson(e as Map<String, dynamic>))
+            .toList();
+      });
+    }
+
+    if (!network.isOnline) {
+      setState(() { _isLoading = false; });
+      return;
+    }
+
     try {
-      // discipline_id (snake_case) — єдиний параметр який сервер розуміє
       final journals = await ref.read(disciplinesRepositoryProvider)
           .getDisciplineJournals(widget.disciplineId);
-      setState(() {
-        _journals = journals;
-        _isLoading = false;
-      });
+      await cache.set(cacheKey, journals.map((j) => j.toJson()).toList());
+      setState(() { _journals = journals; _isLoading = false; });
     } catch (e) {
-      setState(() { _isLoading = false; _error = e.toString(); });
+      setState(() {
+        _isLoading = false;
+        if (cachedRaw == null) _error = e.toString();
+      });
     }
   }
 
@@ -1047,7 +1216,10 @@ class _DisciplineJournalListPageState
             ),
           ),
           Expanded(
-            child: ListView.builder(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               itemCount: filtered.length + 1,
               itemBuilder: (context, i) {
@@ -1119,6 +1291,20 @@ class _DisciplineJournalListPageState
                                     color: Color(0xFFB91C1C),
                                     letterSpacing: 0.5)),
                           ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined,
+                              color: AppTheme.textMid, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => showEditJournalSheet(
+                            context,
+                            journalId: j.id,
+                            driveLink: j.driveLink,
+                            meetLink: j.meetLink,
+                            moodleLink: j.moodleLink,
+                            onUpdated: _load,
+                          ),
+                        ),
                       ]),
                       const SizedBox(height: 4),
                       Text(semesterLabel,
@@ -1156,6 +1342,7 @@ class _DisciplineJournalListPageState
                   ),
                 );
               },
+              ),
             ),
           ),
         ],

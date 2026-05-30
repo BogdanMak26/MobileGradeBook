@@ -11,35 +11,18 @@ class NotifKey {
   static const master = 'notif_master';
 
   // CADET
-  static const importantClasses     = 'notif_important_classes';
-  static const importantClassesTime = 'notif_important_classes_time'; // '1h' | '24h' | '48h'
-  static const newGrades            = 'notif_new_grades';
-  static const lowGrades            = 'notif_low_grades';
-  static const scheduleChanges      = 'notif_schedule_changes';
-  static const classCancellation    = 'notif_class_cancellation';
-  static const deptAnnouncements    = 'notif_dept_announcements';
+  static const newGrades         = 'notif_new_grades';
+  static const lowGrades         = 'notif_low_grades';
+  static const scheduleChanges   = 'notif_schedule_changes';
+  static const classCancellation = 'notif_class_cancellation';
 
-  // INSTRUCTOR
-  static const unfilledJournals     = 'notif_unfilled_journals';
-  static const beforeClassReminder  = 'notif_before_class';
-  static const beforeClassTime      = 'notif_before_class_time'; // '15m' | '30m' | '1h'
-  static const myScheduleChanges    = 'notif_my_schedule';
+  // INSTRUCTOR + CADET
+  static const beforeClassReminder = 'notif_before_class';
+  static const beforeClassTime     = 'notif_before_class_time'; // '15m' | '30m' | '1h'
 
-  // DEPARTMENT_HEAD
-  static const weeklyDigest                = 'notif_weekly_digest';
-  static const criticalPerformance         = 'notif_critical_performance';
-  static const monthlyReport               = 'notif_monthly_report';
-  static const unfilledInstructorJournals  = 'notif_instructor_journals';
-  static const overdueJournals             = 'notif_overdue_journals';
-  static const deptSchedule               = 'notif_dept_schedule';
-
-  // ADMIN / EDUCATION OFFICE
-  static const newUsers            = 'notif_new_users';
-  static const syncErrors          = 'notif_sync_errors';
-  static const weeklyReports       = 'notif_weekly_reports';
-  static const criticalIndicators  = 'notif_critical_indicators';
-  static const groupChanges        = 'notif_group_changes';
-  static const disciplineChanges   = 'notif_discipline_changes';
+  // INSTRUCTOR + DEPARTMENT_HEAD
+  static const unfilledJournals  = 'notif_unfilled_journals';
+  static const myScheduleChanges = 'notif_my_schedule';
 }
 
 class NotificationSettings {
@@ -85,14 +68,13 @@ class NotificationSettings {
         return const NotificationSettings(
           masterEnabled: true,
           toggles: {
-            NotifKey.importantClasses:  true,
-            NotifKey.newGrades:         true,
-            NotifKey.lowGrades:         true,
-            NotifKey.scheduleChanges:   true,
-            NotifKey.classCancellation: true,
-            NotifKey.deptAnnouncements: false,
+            NotifKey.newGrades:           true,
+            NotifKey.lowGrades:           true,
+            NotifKey.scheduleChanges:     true,
+            NotifKey.classCancellation:   true,
+            NotifKey.beforeClassReminder: false,
           },
-          options: {NotifKey.importantClassesTime: '24h'},
+          options: {NotifKey.beforeClassTime: '15m'},
         );
       case UserRole.instructor:
         return const NotificationSettings(
@@ -109,26 +91,16 @@ class NotificationSettings {
         return const NotificationSettings(
           masterEnabled: true,
           toggles: {
-            NotifKey.weeklyDigest:               true,
-            NotifKey.criticalPerformance:        true,
-            NotifKey.monthlyReport:              false,
-            NotifKey.unfilledInstructorJournals: true,
-            NotifKey.overdueJournals:            true,
-            NotifKey.deptSchedule:               true,
+            NotifKey.unfilledJournals:  true,
+            NotifKey.myScheduleChanges: true,
+            NotifKey.classCancellation: true,
           },
           options: {},
         );
       default:
         return const NotificationSettings(
           masterEnabled: true,
-          toggles: {
-            NotifKey.newUsers:           true,
-            NotifKey.syncErrors:         true,
-            NotifKey.weeklyReports:      true,
-            NotifKey.criticalIndicators: true,
-            NotifKey.groupChanges:       false,
-            NotifKey.disciplineChanges:  false,
-          },
+          toggles: {},
           options: {},
         );
     }
@@ -184,3 +156,12 @@ final notificationSettingsProvider = StateNotifierProvider.autoDispose<
     return NotificationSettingsNotifier(role);
   },
 );
+
+/// Перевіряє, чи увімкнено сповіщення [key] у SharedPreferences.
+/// Враховує master-перемикач та role-based defaults.
+Future<bool> isNotifEnabled(String key, {String role = ''}) async {
+  final prefs = await SharedPreferences.getInstance();
+  if (!(prefs.getBool(NotifKey.master) ?? true)) return false;
+  final defaults = NotificationSettings.defaultsForRole(role).toggles;
+  return prefs.getBool(key) ?? defaults[key] ?? false;
+}

@@ -132,23 +132,33 @@ class _DisciplinesPageState extends ConsumerState<DisciplinesPage> {
             Expanded(child: Center(child: Text(vm.error!)))
           else
             Expanded(
-              child: disciplines.isEmpty
-                  ? _EmptyState(search: _search)
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                      itemCount:
-                          disciplines.length + (_canManage(role) ? 1 : 0),
-                      itemBuilder: (context, i) {
-                        if (_canManage(role) && i == disciplines.length) {
-                          return const _AddDisciplineCard();
-                        }
-                        return _DisciplineCard(
-                          discipline: disciplines[i],
-                          isCadet: _isCadet(role),
-                          cadetGroupId: cadetGroupId,
-                        );
-                      },
-                    ),
+              child: RefreshIndicator(
+                onRefresh: () =>
+                    ref.read(disciplinesViewModelProvider.notifier).load(),
+                child: disciplines.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [_EmptyState(search: _search)],
+                      )
+                    : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        itemCount:
+                            disciplines.length + (_canManage(role) ? 1 : 0),
+                        itemBuilder: (context, i) {
+                          if (_canManage(role) && i == disciplines.length) {
+                            return _AddDisciplineCard(
+                              onCreated: () => ref.read(disciplinesViewModelProvider.notifier).load(),
+                            );
+                          }
+                          return _DisciplineCard(
+                            discipline: disciplines[i],
+                            isCadet: _isCadet(role),
+                            cadetGroupId: cadetGroupId,
+                          );
+                        },
+                      ),
+              ),
             ),
         ],
       ),
@@ -430,7 +440,12 @@ class _JournalListPageState extends ConsumerState<_JournalListPage> {
             ]),
           ),
           Expanded(
-            child: ListView.builder(
+            child: RefreshIndicator(
+              onRefresh: () => ref
+                  .read(disciplinesViewModelProvider.notifier)
+                  .getJournalsFor(widget.discipline.id),
+              child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               itemCount: filtered.length + 1,
               itemBuilder: (context, i) {
@@ -497,8 +512,22 @@ class _JournalListPageState extends ConsumerState<_JournalListPage> {
                                 color: AppTheme.textDark),
                           ),
                         ),
-                        Icon(Icons.star_border,
-                            color: Colors.grey.shade400, size: 20),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined,
+                              color: AppTheme.textMid, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => showEditJournalSheet(
+                            context,
+                            journalId: j.id,
+                            driveLink: j.driveLink,
+                            meetLink: j.meetLink,
+                            moodleLink: j.moodleLink,
+                            onUpdated: () => ref
+                                .read(disciplinesViewModelProvider.notifier)
+                                .getJournalsFor(widget.discipline.id),
+                          ),
+                        ),
                       ]),
                       const SizedBox(height: 6),
                       Text('(${j.disciplineName})',
@@ -576,6 +605,7 @@ class _JournalListPageState extends ConsumerState<_JournalListPage> {
                 );
               },
             ),
+            ),
           ),
         ],
       ),
@@ -612,12 +642,13 @@ class _ResourceBadge extends StatelessWidget {
 }
 
 class _AddDisciplineCard extends StatelessWidget {
-  const _AddDisciplineCard();
+  final VoidCallback? onCreated;
+  const _AddDisciplineCard({this.onCreated});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showAddDisciplineSheet(context),
+      onTap: () => showAddDisciplineSheet(context, onCreated: onCreated),
       child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),

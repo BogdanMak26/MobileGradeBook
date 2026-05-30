@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../core/api/repositories.dart';
+import '../../../../core/local/local_cache.dart';
+import '../../../../core/network/network_monitor.dart';
 import '../../../../core/utils/military_labels.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
 
@@ -84,36 +86,61 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     });
   }
 
+  String _ratesCacheKey(int? groupId, int? semesterId) =>
+      'analytics_rates_g${groupId}_s$semesterId';
+
+  static List<Map<String, dynamic>> _parseRatesContent(List<dynamic> content) {
+    return content.map((r) {
+      final m = r as Map<String, dynamic>;
+      final last  = m['lastName']  as String? ?? '';
+      final first = m['firstName'] as String? ?? '';
+      return <String, dynamic>{
+        'cadetId':        (m['cadetId'] as num?)?.toInt(),
+        'name':           '$last $first'.trim(),
+        'position':       MilitaryLabels.position(m['position'] as String?),
+        'group':          m['groupName']   as String? ?? '',
+        'specialty':      MilitaryLabels.speciality(m['speciality'] as String?),
+        'facultyName':    m['facultyName'] as String? ?? '',
+        'enrollmentYear': m['enrollmentYear']?.toString() ?? '',
+        'score':          ((m['ratePercentage']    as num?) ?? 0).round(),
+        'attendance':     ((m['presentPercentage'] as num?) ?? 0).round(),
+      };
+    }).toList();
+  }
+
   Future<void> _loadRates() async {
     final auth = ref.read(authViewModelProvider);
     final isCadet = auth.role == UserRole.cadet;
-    final groupId = auth.groupId;
+    final groupId = isCadet ? auth.groupId : _selectedGroupId;
     if (isCadet && groupId == null) return;
-    setState(() => _isLoading = true);
+
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+    final cacheKey = _ratesCacheKey(groupId, _selectedSemesterId);
+
+    // Показуємо кешовані дані одразу
+    final cachedResult = cache.get<Map<String, dynamic>>(cacheKey);
+    if (cachedResult != null) {
+      final content = cachedResult['content'] as List<dynamic>? ?? [];
+      if (mounted) setState(() => _apiCadets = _parseRatesContent(content));
+    }
+
+    if (!network.isOnline) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    // Показуємо спінер тільки якщо немає даних для відображення
+    setState(() => _isLoading = _apiCadets.isEmpty);
     try {
       final result = await ref.read(ratesRepositoryProvider).getRates(
-        groupId: isCadet ? groupId : _selectedGroupId,
+        groupId: groupId,
         semesterId: _selectedSemesterId,
         size: 5000,
       );
+      await cache.set(cacheKey, result);
       final content = result['content'] as List<dynamic>? ?? [];
-      final cadets = content.map((r) {
-        final m = r as Map<String, dynamic>;
-        final last  = m['lastName']  as String? ?? '';
-        final first = m['firstName'] as String? ?? '';
-        return <String, dynamic>{
-          'cadetId':        (m['cadetId'] as num?)?.toInt(),
-          'name':           '$last $first'.trim(),
-          'position':       MilitaryLabels.position(m['position'] as String?),
-          'group':          m['groupName']   as String? ?? '',
-          'specialty':      MilitaryLabels.speciality(m['speciality'] as String?),
-          'facultyName':    m['facultyName'] as String? ?? '',
-          'enrollmentYear': m['enrollmentYear']?.toString() ?? '',
-          'score':          ((m['ratePercentage']    as num?) ?? 0).round(),
-          'attendance':     ((m['presentPercentage'] as num?) ?? 0).round(),
-        };
-      }).toList();
-      if (mounted) setState(() { _apiCadets = cadets; _isLoading = false; });
+      if (mounted) setState(() { _apiCadets = _parseRatesContent(content); _isLoading = false; });
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -215,7 +242,9 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
           child: Container(height: 3, color: AppTheme.primary),
         ),
       ),
-      body: CustomScrollView(
+      body: RefreshIndicator(
+        onRefresh: _loadRates,
+        child: CustomScrollView(
         slivers: [
           // ── Заголовок ─────────────────────────────────────────────────
           SliverToBoxAdapter(
@@ -441,6 +470,7 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
                         : _StatisticsTab(cadets: visibleCadets),
           ),
         ],
+      ),
       ),
     );
   }

@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:app_links/app_links.dart';
 import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/api/repositories.dart';
 import '../../../../core/auth/auth_service.dart';
@@ -84,10 +86,13 @@ class AuthViewModel extends StateNotifier<AuthState> {
   final AuthService _authService;
   final UserRepository _userRepo;
   final FcmService _fcmService;
+  final CadetsRepository _cadetsRepo;
+  final TeachersRepository _teachersRepo;
   String? _codeVerifier;
   bool _processingCallback = false;
 
-  AuthViewModel(this._authService, this._userRepo, this._fcmService)
+  AuthViewModel(this._authService, this._userRepo, this._fcmService,
+      this._cadetsRepo, this._teachersRepo)
       : super(const AuthState()) {
     _initDeepLinks();
     checkAuthStatus();
@@ -229,6 +234,15 @@ class AuthViewModel extends StateNotifier<AuthState> {
       facultyName: data['facultyName'] as String?,
     );
     _fcmService.subscribeToRoleTopic(role);
+    // Зберігаємо профіль для офлайн-входу
+    _authService.saveUserProfile(data).ignore();
+    // Зберігаємо role/userId для фонових задач workmanager
+    SharedPreferences.getInstance().then((p) {
+      p.setString(AppConstants.userRoleKey, role ?? '');
+      p.setString(AppConstants.userIdKey, data['id']?.toString() ?? '');
+      final gId = group?['id'] ?? data['groupId'];
+      if (gId != null) p.setString(AppConstants.groupIdKey, gId.toString());
+    });
   }
 
   Future<void> logout() async {
@@ -243,6 +257,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
 
     // Одразу очищаємо локальний стан — екран переходить на /login без затримки
     await _authService.clearTokens();
+    await _authService.clearUserProfile();
     state = const AuthState(status: AuthStatus.unauthenticated);
 
     // Серверний logout у фоні (не блокуємо UI)
@@ -257,10 +272,29 @@ class AuthViewModel extends StateNotifier<AuthState> {
     try {
       final accessToken = await _authService.getValidAccessToken();
       if (accessToken != null) {
-        final userData = await _userRepo.getMe();
-        _setUserFromData(userData);
+        try {
+          final userData = await _userRepo.getMe();
+          _setUserFromData(userData);
+          return true;
+        } catch (e) {
+          if (_isNetworkError(e)) {
+            final cached = await _authService.getCachedUserProfile();
+            if (cached != null) {
+              _setUserFromData(cached);
+              return true;
+            }
+          }
+          rethrow;
+        }
+      }
+
+      // Токен прострочений і не вдалося оновити (офлайн) — спробуємо кешований профіль
+      final cached = await _authService.getCachedUserProfile();
+      if (cached != null) {
+        _setUserFromData(cached);
         return true;
       }
+
       // dev fallback: mock login by saved role
       if (savedRole != null) {
         mockLogin(savedRole);
@@ -281,9 +315,44 @@ class AuthViewModel extends StateNotifier<AuthState> {
     return false;
   }
 
-  void updateProfile({String? fullName}) {
-    if (fullName != null) {
-      state = state.copyWith(fullName: fullName);
+  static bool _isNetworkError(Object e) {
+    if (e is DioException) {
+      return e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout;
+    }
+    return false;
+  }
+
+  Future<String?> updateProfile({
+    String? firstName,
+    String? lastName,
+    String? rank,
+    String? position,
+  }) async {
+    final userId = state.userId;
+    if (userId == null) return 'Немає даних користувача';
+
+    final data = <String, dynamic>{};
+    if (firstName != null) data['name'] = firstName;
+    if (lastName != null) data['surname'] = lastName;
+    if (rank != null) data['rank'] = rank;
+    if (position != null) data['position'] = position;
+    if (data.isEmpty) return null;
+
+    try {
+      final id = int.parse(userId);
+      if (state.role == UserRole.cadet) {
+        await _cadetsRepo.updateCadet(id, data);
+      } else {
+        await _teachersRepo.updateTeacher(id, data);
+      }
+      final fresh = await _userRepo.getMe();
+      _setUserFromData(fresh);
+      return null;
+    } catch (e) {
+      return e.toString();
     }
   }
 
@@ -332,5 +401,7 @@ final authViewModelProvider =
     ref.read(authServiceProvider),
     ref.read(userRepositoryProvider),
     ref.read(fcmServiceProvider),
+    ref.read(cadetsRepositoryProvider),
+    ref.read(teachersRepositoryProvider),
   );
 });

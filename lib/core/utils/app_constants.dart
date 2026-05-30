@@ -42,6 +42,7 @@ class AppConstants {
   static const String idTokenKey = 'id_token';
   static const String userRoleKey = 'user_role';
   static const String userIdKey = 'user_id';
+  static const String groupIdKey = 'user_group_id';
 }
 
 class UserRole {

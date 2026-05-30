@@ -33,6 +33,9 @@ class DisciplineModel {
           _buildTeacherName(json['teacher'] as Map<String, dynamic>?),
       kafedraId: json['kafedraId'] as int?,
       journalCount: json['journalCount'] as int? ?? 0,
+      journalId: json['journalId'] as int?,
+      groupId: json['groupId'] as int?,
+      semesterId: json['semesterId'] as int?,
     );
   }
 
@@ -42,4 +45,16 @@ class DisciplineModel {
     final first = teacher['firstName'] as String? ?? '';
     return '$last $first'.trim();
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': fullName,
+        'shortName': shortName,
+        'teacherName': teacherName,
+        'kafedraId': kafedraId,
+        'journalCount': journalCount,
+        if (journalId != null) 'journalId': journalId,
+        if (groupId != null) 'groupId': groupId,
+        if (semesterId != null) 'semesterId': semesterId,
+      };
 }

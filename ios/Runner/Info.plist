@@ -50,6 +50,13 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>background-processing</string>
+		<string>background-fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.viti.gradebook.gradesCheck</string>
+		<string>com.viti.gradebook.journalsReminder</string>
 	</array>
 </dict>
 </plist>

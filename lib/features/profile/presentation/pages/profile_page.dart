@@ -25,11 +25,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
 
   late String _firstName;
   late String _lastName;
-  late String? _rank;
-  late String? _position;
   String _phone = '';
   String? _birthDate;
   String _gender = 'Чоловік';
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -38,8 +37,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
     final parts = (auth.fullName ?? '').trim().split(' ');
     _lastName  = parts.isNotEmpty ? parts[0] : '';
     _firstName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
-    _rank = MilitaryLabels.rank(auth.rank);
-    _position = MilitaryLabels.position(auth.position);
 
     _ctrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
@@ -216,21 +213,21 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Посада / звання
-                    if (_rank != null || _position != null) ...[
+                    if (auth.rank != null || auth.position != null) ...[
                       _SectionHeader(
                           icon: Icons.military_tech_rounded,
                           title: 'Посада'),
                       _InfoCard(items: [
-                        if (_rank != null)
+                        if (auth.rank != null)
                           _InfoRow(
                               icon: Icons.star_outline,
                               label: 'Звання',
-                              value: _rank!),
-                        if (_position != null)
+                              value: MilitaryLabels.rank(auth.rank)),
+                        if (auth.position != null)
                           _InfoRow(
                               icon: Icons.badge_outlined,
                               label: 'Посада',
-                              value: _position!),
+                              value: MilitaryLabels.position(auth.position)),
                       ]),
                       const SizedBox(height: 16),
                     ],
@@ -397,10 +394,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
         .toList();
 
     String selectedGender = _gender;
-    String? selectedRank  = (_rank != null && _allRanks.contains(_rank))
-        ? _rank : _allRanks.first;
-    String? selectedPos   = (_position != null && allPositions.contains(_position))
-        ? _position : allPositions.first;
+    final currentRankDisplay = MilitaryLabels.rank(auth.rank);
+    final currentPosDisplay  = MilitaryLabels.position(auth.position);
+    String? selectedRank  = _allRanks.contains(currentRankDisplay)
+        ? currentRankDisplay : _allRanks.first;
+    String? selectedPos   = allPositions.contains(currentPosDisplay)
+        ? currentPosDisplay : allPositions.first;
     String? selectedBirth = _birthDate;
 
     showModalBottomSheet(
@@ -569,25 +568,40 @@ class _ProfilePageState extends ConsumerState<ProfilePage>
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () {
+                        onPressed: _isSaving ? null : () async {
                           final newLast  = lastNameCtrl.text.trim();
                           final newFirst = firstNameCtrl.text.trim();
                           if (newLast.isEmpty || newFirst.isEmpty) return;
 
                           Navigator.pop(ctx);
                           setState(() {
+                            _isSaving  = true;
                             _lastName  = newLast;
                             _firstName = newFirst;
                             _phone     = phoneCtrl.text.trim();
                             _gender    = selectedGender;
                             _birthDate = selectedBirth;
-                            _rank      = selectedRank;
-                            _position  = selectedPos;
                           });
-                          ref
+
+                          final error = await ref
                               .read(authViewModelProvider.notifier)
                               .updateProfile(
-                                  fullName: '$newLast $newFirst');
+                                firstName: newFirst,
+                                lastName: newLast,
+                                rank: MilitaryLabels.rankCode(selectedRank),
+                                position: MilitaryLabels.positionCode(selectedPos),
+                              );
+
+                          if (!mounted) return;
+                          setState(() => _isSaving = false);
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(error == null
+                                ? 'Профіль збережено'
+                                : 'Помилка: $error'),
+                            backgroundColor: error == null
+                                ? const Color(0xFF16A34A)
+                                : const Color(0xFFDC2626),
+                          ));
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,

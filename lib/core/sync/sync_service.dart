@@ -14,6 +14,8 @@ class SyncService {
     _sub = network.statusStream.listen((status) {
       if (status == NetworkStatus.online) syncNow();
     });
+    // Синхронізувати залишки черги одразу при старті (якщо мережа вже є)
+    if (network.isOnline) syncNow();
   }
 
   Future<void> syncNow() async {

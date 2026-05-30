@@ -84,11 +84,9 @@ class DisciplinesRepository {
     return DisciplineModel.fromJson(response.data as Map<String, dynamic>);
   }
 
-  Future<DisciplineModel> updateDiscipline(
+  Future<void> updateDiscipline(
       int disciplineId, Map<String, dynamic> data) async {
-    final response =
-        await _client.dio.patch('/disciplines/$disciplineId', data: data);
-    return DisciplineModel.fromJson(response.data as Map<String, dynamic>);
+    await _client.dio.patch('/disciplines/$disciplineId', data: data);
   }
 
   Future<void> deleteDiscipline(int disciplineId) async {

@@ -26,19 +26,22 @@ class LessonModel {
   });
 
   factory LessonModel.fromJson(Map<String, dynamic> json) {
-    double maxScore = (json['markMaxValue'] as num?)?.toDouble() ?? 0.0;
+    double maxScore = (json['markMaxValue'] as num?)?.toDouble()
+        ?? (json['maxScore'] as num?)?.toDouble()
+        ?? 0.0;
     int? subLessonId;
     final subLessons = json['subLessons'] as List<dynamic>?;
     if (subLessons != null && subLessons.isNotEmpty) {
       final firstSl = subLessons.first as Map<String, dynamic>;
-      subLessonId = firstSl['id'] as int?
-          ?? firstSl['subLessonId'] as int?;
+      subLessonId = firstSl['id'] as int? ?? firstSl['subLessonId'] as int?;
       if (maxScore == 0.0) {
         maxScore = subLessons.fold(0.0, (sum, sl) {
           final slMap = sl as Map<String, dynamic>;
           return sum + ((slMap['markMaxValue'] as num?)?.toDouble() ?? 0.0);
         });
       }
+    } else {
+      subLessonId = json['subLessonId'] as int?;
     }
     return LessonModel(
       id: (json['lessonId'] ?? json['id']) as int,
@@ -63,11 +66,14 @@ class LessonModel {
   }
 
   Map<String, dynamic> toJson() => {
+    'id': id,
+    'journalId': journalId,
     'code': code,
     'type': type,
     'topic': topic,
     'date': date,
     'maxScore': maxScore,
+    if (subLessonId != null) 'subLessonId': subLessonId,
     if (pair != null) 'pair': pair,
     if (room != null) 'room': room,
   };

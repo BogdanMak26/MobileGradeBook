@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/local/offline_queue.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/sync_status_chip.dart';
@@ -109,6 +110,9 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
     _tab = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final vm = ref.read(gradeJournalViewModelProvider.notifier);
+      if (widget.disciplineShortName != null) {
+        vm.setDisciplineName(widget.disciplineShortName!);
+      }
       final jId = widget.journalId;
       if (jId != null && jId != 0) {
         vm.loadJournalById(jId);
@@ -156,9 +160,18 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
   }
 
   void _triggerReload() {
-    if (_journalId == 0) return;
     setState(() => _dataFromApi = false);
-    ref.read(gradeJournalViewModelProvider.notifier).loadJournalById(_journalId);
+    if (widget.groupId != null) {
+      final discId = int.tryParse(widget.disciplineId) ?? 0;
+      final semId  = int.tryParse(widget.semesterId ?? '') ?? 0;
+      ref.read(gradeJournalViewModelProvider.notifier).loadJournal(
+        groupId:      widget.groupId!,
+        disciplineId: discId,
+        semesterId:   semId,
+      );
+    } else if (_journalId != 0) {
+      ref.read(gradeJournalViewModelProvider.notifier).loadJournalById(_journalId);
+    }
   }
 
   @override
@@ -175,6 +188,26 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
       if (next.error != null && next.error != prev?.error && _dataFromApi) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(next.error!), backgroundColor: Colors.red));
+      }
+      if (next.offlineMessage != null && next.offlineMessage != prev?.offlineMessage) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Row(children: [
+            const Icon(Icons.cloud_off_rounded, color: Colors.white, size: 16),
+            const SizedBox(width: 10),
+            Expanded(child: Text(next.offlineMessage!,
+                style: const TextStyle(fontSize: 13))),
+          ]),
+          backgroundColor: const Color(0xFFF59E0B),
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    });
+
+    // Після завершення офлайн-синхронізації — перезавантажити журнал
+    ref.listen<int>(offlineQueueProvider, (prev, next) {
+      if ((prev ?? 0) > 0 && next == 0 && _dataFromApi) {
+        _triggerReload();
       }
     });
 
@@ -294,11 +327,29 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                   controller: _tab,
                   children: [
                     journalVm.error != null && !_dataFromApi
-                        ? Center(child: Text(journalVm.error!, style: const TextStyle(color: Colors.red)))
+                        ? RefreshIndicator(
+                            onRefresh: () async => _triggerReload(),
+                            child: ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                const SizedBox(height: 120),
+                                Center(child: Text(journalVm.error!, style: const TextStyle(color: Colors.red))),
+                              ],
+                            ),
+                          )
                         : !_dataFromApi && _lessons.isEmpty
                             ? journalVm.isLoading
                                 ? const SizedBox.shrink()
-                                : const Center(child: Text('Немає даних', style: TextStyle(color: AppTheme.textMid)))
+                                : RefreshIndicator(
+                                    onRefresh: () async => _triggerReload(),
+                                    child: ListView(
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      children: const [
+                                        SizedBox(height: 120),
+                                        Center(child: Text('Немає даних', style: TextStyle(color: AppTheme.textMid))),
+                                      ],
+                                    ),
+                                  )
                             : _GradesTab(
                                     lessons: _lessons,
                                     maxTotalScore: _maxTotalScore,
@@ -331,6 +382,7 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                       canEdit: canEdit,
                       onAdd: () => _showAddLessonDialog(context),
                       onEdit: (l) => _showEditLessonDialog(context, l),
+                      onRefresh: () async => _triggerReload(),
                     ),
                     _LinksTab(),
                   ],
@@ -460,16 +512,17 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
             if (ms == null) { setDS(() => scoreError = 'Введіть число'); ok = false; }
             if (!ok) return;
             final teacherId = int.tryParse(ref.read(authViewModelProvider).userId ?? '') ?? 0;
+            final date = selectedDate ?? DateTime.now();
+            final dateStr = '${date.year.toString().padLeft(4, '0')}-'
+                '${date.month.toString().padLeft(2, '0')}-'
+                '${date.day.toString().padLeft(2, '0')}';
             final data = <String, dynamic>{
-              'teacherId': teacherId,
+              'teacherId':    teacherId,
               'markMaxValue': ms,
-              'name': nameCtrl.text.trim(),
-              'theme': themeCtrl.text.trim(),
-              'type': lessonType,
-              if (selectedDate != null)
-                'lessonDate': '${selectedDate!.year.toString().padLeft(4, '0')}-'
-                    '${selectedDate!.month.toString().padLeft(2, '0')}-'
-                    '${selectedDate!.day.toString().padLeft(2, '0')}',
+              'name':         nameCtrl.text.trim(),
+              'theme':        themeCtrl.text.trim(),
+              'type':         lessonType,
+              'lessonDate':   dateStr,
               if (pairCtrl.text.isNotEmpty && int.tryParse(pairCtrl.text) != null)
                 'lessonPara': int.parse(pairCtrl.text),
               if (roomCtrl.text.isNotEmpty) 'room': roomCtrl.text.trim(),
@@ -536,15 +589,16 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
             final msVal = double.tryParse(scoreCtrl.text.trim());
             if (msVal == null) { setDS(() => scoreError = 'Введіть число'); ok = false; }
             if (!ok) return;
+            final editDate = selectedDate ?? DateTime.now();
+            final editDateStr = '${editDate.year.toString().padLeft(4, '0')}-'
+                '${editDate.month.toString().padLeft(2, '0')}-'
+                '${editDate.day.toString().padLeft(2, '0')}';
             final data = <String, dynamic>{
               'markMaxValue': msVal,
-              'name': nameCtrl.text.trim(),
-              'theme': themeCtrl.text.trim(),
-              'type': lessonType,
-              if (selectedDate != null)
-                'lessonDate': '${selectedDate!.year.toString().padLeft(4, '0')}-'
-                    '${selectedDate!.month.toString().padLeft(2, '0')}-'
-                    '${selectedDate!.day.toString().padLeft(2, '0')}',
+              'name':        nameCtrl.text.trim(),
+              'theme':       themeCtrl.text.trim(),
+              'type':        lessonType,
+              'lessonDate':  editDateStr,
               if (pairCtrl.text.isNotEmpty && int.tryParse(pairCtrl.text) != null)
                 'lessonPara': int.parse(pairCtrl.text),
               'room': roomCtrl.text.trim(),
@@ -1398,11 +1452,13 @@ class _LessonsTab extends StatelessWidget {
   final bool canEdit;
   final VoidCallback onAdd;
   final void Function(Map<String, dynamic>) onEdit;
+  final Future<void> Function()? onRefresh;
   const _LessonsTab({
     required this.lessons,
     required this.canEdit,
     required this.onAdd,
     required this.onEdit,
+    this.onRefresh,
   });
 
   Color _typeBg(String type) {
@@ -1425,7 +1481,8 @@ class _LessonsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
+    final listView = ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       itemCount: lessons.length + 1,
       itemBuilder: (_, i) {
@@ -1575,6 +1632,10 @@ class _LessonsTab extends StatelessWidget {
         );
       },
     );
+    if (onRefresh != null) {
+      return RefreshIndicator(onRefresh: onRefresh!, child: listView);
+    }
+    return listView;
   }
 }
 

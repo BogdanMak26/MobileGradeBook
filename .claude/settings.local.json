@@ -37,7 +37,20 @@
       "Bash(xargs ls)",
       "Bash(xargs grep -l \"MarkType\\\\|markType\\\\|mark_type\")",
       "Read(//c/Users/9990/**)",
-      "Bash(find /k -maxdepth 3 -name \"images_claude\" -type d)"
+      "Bash(find /k -maxdepth 3 -name \"images_claude\" -type d)",
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\" -Recurse -Filter \"*model*\" -Type File)",
+      "Bash(grep -i \"\\\\.dart$\")",
+      "Bash(Get-ChildItem -Recurse -Filter \"*.dart\" -Path \"lib/core/local\", \"lib/core/sync\", \"lib/core/network\", \"lib/core/api\", \"lib/features\")",
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\\\\lib\" -Recurse -Filter \"*.dart\")",
+      "Bash(xargs grep -l \"ListView\\\\|RefreshIndicator\\\\|CustomScrollView\")",
+      "Bash(xargs grep -l \"Future<void> _load\\\\|Future<void> load\\\\b\\\\|Future<void> refresh\\\\|onRefresh\")",
+      "Bash(where plantuml *)",
+      "Bash(java -jar plantuml.jar -version)",
+      "Bash(python3 -c \"import zlib, base64; print\\('ok'\\)\")",
+      "Bash(python3 *)",
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\" -Directory)",
+      "Bash(flutter clean *)",
+      "Bash(dir *)"
     ]
   }
 }

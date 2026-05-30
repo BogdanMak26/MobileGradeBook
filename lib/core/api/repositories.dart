@@ -53,10 +53,12 @@ class UserRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateUser(
+  Future<Map<String, dynamic>?> updateUser(
       int userId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/users/$userId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   /// mode: 'DEACTIVATE' | 'FULL'
@@ -90,10 +92,12 @@ class GroupsRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateGroup(
+  Future<Map<String, dynamic>?> updateGroup(
       int groupId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/groups/$groupId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   Future<void> deleteGroup(int groupId) async {
@@ -139,10 +143,12 @@ class SemestersRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateSemester(
+  Future<Map<String, dynamic>?> updateSemester(
       int semesterId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/semesters/$semesterId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   Future<void> deleteSemester(int semesterId) async {
@@ -183,10 +189,12 @@ class JournalsRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateJournal(
+  Future<Map<String, dynamic>?> updateJournal(
       int journalId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/journals/$journalId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   Future<void> deleteJournal(int journalId) async {
@@ -264,10 +272,12 @@ class CadetsRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateCadet(
+  Future<Map<String, dynamic>?> updateCadet(
       int cadetId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/cadets/$cadetId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   /// mode: 'DEACTIVATE' | 'FULL'
@@ -309,10 +319,12 @@ class TeachersRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateTeacher(
+  Future<Map<String, dynamic>?> updateTeacher(
       int teacherId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/teachers/$teacherId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   /// mode: 'DEACTIVATE' | 'FULL'
@@ -353,10 +365,12 @@ class FacultiesRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateFaculty(
+  Future<Map<String, dynamic>?> updateFaculty(
       int facultyId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/faculties/$facultyId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   Future<void> deleteFaculty(int facultyId) async {
@@ -391,10 +405,12 @@ class KafedrasRepository {
     return r.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> updateKafedra(
+  Future<Map<String, dynamic>?> updateKafedra(
       int kafedraId, Map<String, dynamic> data) async {
     final r = await _client.dio.patch('/kafedras/$kafedraId', data: data);
-    return r.data as Map<String, dynamic>;
+    final raw = r.data;
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.from(raw as Map);
   }
 
   Future<void> deleteKafedra(int kafedraId) async {

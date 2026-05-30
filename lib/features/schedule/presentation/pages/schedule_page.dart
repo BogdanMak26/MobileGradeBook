@@ -4,7 +4,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/api/repositories.dart';
+import '../../../../core/local/local_cache.dart';
+import '../../../../core/network/network_monitor.dart';
+import '../../../../core/notifications/notification_preferences.dart';
+import '../../../../core/notifications/notification_service.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../auth/presentation/viewmodels/auth_viewmodel.dart';
@@ -118,98 +123,153 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
     super.dispose();
   }
 
-  Future<void> _loadDropdowns() async {
-    try {
-      final kafedrasFuture = ref.read(kafedrasRepositoryProvider).getKafedras();
-      final facultiesFuture = ref.read(facultiesRepositoryProvider).getFaculties();
-      final kafedrasRaw = await kafedrasFuture;
-      final facultiesRaw = await facultiesFuture;
-      if (!mounted) return;
-      final kafedras = kafedrasRaw
-          .map((k) => Map<String, dynamic>.from(k as Map))
-          .toList();
-      final faculties = facultiesRaw
-          .map((f) => Map<String, dynamic>.from(f as Map))
-          .toList();
-      setState(() {
-        _kafedras = kafedras;
-        _faculties = faculties;
-        if (kafedras.isNotEmpty) _deptNum = _numOf(kafedras.first);
-        if (faculties.isNotEmpty) {
-          _facultyNum = _numOf(faculties.first);
-          _facultyId = faculties.first['id'] as int?;
-          // for cadets: pre-select their own faculty by name
-          final auth = ref.read(authViewModelProvider);
-          if (auth.role == UserRole.cadet && auth.facultyName != null) {
-            final match = faculties.firstWhere(
-              (f) => (f['name'] as String?) == auth.facultyName,
-              orElse: () => <String, dynamic>{},
-            );
-            if (match.isNotEmpty) {
-              _facultyNum = _numOf(match);
-              _facultyId = match['id'] as int?;
-            }
+  void _applyDropdownState(
+      List<Map<String, dynamic>> kafedras,
+      List<Map<String, dynamic>> faculties) {
+    if (!mounted) return;
+    setState(() {
+      _kafedras = kafedras;
+      _faculties = faculties;
+      // Встановлюємо тільки якщо ще не обрано (щоб не скидати вибір при оновленні)
+      if (kafedras.isNotEmpty && _deptNum == null) {
+        _deptNum = _numOf(kafedras.first);
+      }
+      if (faculties.isNotEmpty && _facultyNum == null) {
+        _facultyNum = _numOf(faculties.first);
+        _facultyId = faculties.first['id'] as int?;
+        final auth = ref.read(authViewModelProvider);
+        if (auth.role == UserRole.cadet && auth.facultyName != null) {
+          final match = faculties.firstWhere(
+            (f) => (f['name'] as String?) == auth.facultyName,
+            orElse: () => <String, dynamic>{},
+          );
+          if (match.isNotEmpty) {
+            _facultyNum = _numOf(match);
+            _facultyId = match['id'] as int?;
           }
         }
-      });
-      _fetchSchedule();
-    } catch (_) {
-      _fetchSchedule();
+      }
+    });
+  }
+
+  Future<void> _loadDropdowns() async {
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+
+    // Застосовуємо кешовані дані одразу (без виклику _fetchSchedule)
+    final cachedKafedras = cache.get<List<dynamic>>('schedule_kafedras');
+    final cachedFaculties = cache.get<List<dynamic>>('schedule_faculties');
+    if (cachedKafedras != null || cachedFaculties != null) {
+      _applyDropdownState(
+        cachedKafedras?.map((k) => Map<String, dynamic>.from(k as Map)).toList() ?? [],
+        cachedFaculties?.map((f) => Map<String, dynamic>.from(f as Map)).toList() ?? [],
+      );
     }
+
+    if (!network.isOnline) {
+      _fetchSchedule();
+      return;
+    }
+
+    try {
+      final kafedrasRaw = await ref.read(kafedrasRepositoryProvider).getKafedras();
+      final facultiesRaw = await ref.read(facultiesRepositoryProvider).getFaculties();
+      if (!mounted) return;
+      final kafedras = kafedrasRaw.map((k) => Map<String, dynamic>.from(k as Map)).toList();
+      final faculties = facultiesRaw.map((f) => Map<String, dynamic>.from(f as Map)).toList();
+      await cache.set('schedule_kafedras', kafedras);
+      await cache.set('schedule_faculties', faculties);
+      _applyDropdownState(kafedras, faculties);
+    } catch (_) {}
+
+    _fetchSchedule();
   }
 
   int? _numOf(Map<String, dynamic> m) =>
       m['number'] as int? ?? m['id'] as int?;
 
+  String _scheduleCacheKey(int? courseNum) {
+    final sel = switch (_tabIndex) {
+      0 => _groupNum,
+      1 => '$_deptNum',
+      2 => '$courseNum',
+      3 => '$_facultyNum',
+      _ => '$_locationNum',
+    };
+    return 'schedule_${_tabIndex}_${sel}_$_startDate';
+  }
+
   Future<void> _fetchSchedule() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _error = null);
+
+    final cache = ref.read(localCacheProvider);
+    final network = ref.read(networkMonitorProvider);
+
+    // Визначаємо параметри та ключ кешу
+    int? courseNum;
+    if (_tabIndex == 0 && _groupNum.isEmpty) {
+      setState(() { _loading = false; _lessons = []; });
+      return;
+    }
+    if (_tabIndex == 1 && _deptNum == null) {
+      setState(() { _loading = false; _lessons = []; });
+      return;
+    }
+    if (_tabIndex == 2) {
+      courseNum = int.tryParse(_courseController.text.trim());
+      if (courseNum == null) {
+        setState(() { _loading = false; _lessons = []; });
+        return;
+      }
+    }
+    if (_tabIndex == 3 && _facultyNum == null) {
+      setState(() { _loading = false; _lessons = []; });
+      return;
+    }
+
+    final cacheKey = _scheduleCacheKey(courseNum);
+
+    // Показуємо кешований розклад одразу
+    final cached = cache.get<List<dynamic>>(cacheKey);
+    if (cached != null) {
+      setState(() {
+        _lessons = cached.map((l) => l as Map<String, dynamic>).toList();
+      });
+    }
+
+    // Для вкладки факультету: підвантажуємо кешовані групи
+    if (_tabIndex == 3 && _facultyId != null && _facultyGroupNums.isEmpty) {
+      final cachedGroups = cache.get<List<dynamic>>('schedule_faculty_groups_$_facultyId');
+      if (cachedGroups != null) {
+        _facultyGroupNums = cachedGroups.map((g) => g.toString()).toSet();
+      }
+    }
+
+    if (!network.isOnline) {
+      setState(() { _loading = false; });
+      return;
+    }
+
+    // Спінер тільки якщо немає даних для відображення
+    setState(() { _loading = _lessons.isEmpty; });
+
     try {
       final repo = ref.read(scheduleRepositoryProvider);
-
       final Map<String, dynamic> resp;
 
       switch (_tabIndex) {
-        case 0: // Group
-          if (_groupNum.isEmpty) {
-            setState(() { _loading = false; _lessons = []; });
-            return;
-          }
+        case 0:
           resp = await repo.getGroupSchedule(
-              groupNumber: _groupNum,
-              startDate: _startDate,
-              endDate: _endDate);
-        case 1: // Department
-          if (_deptNum == null) {
-            setState(() { _loading = false; _lessons = []; });
-            return;
-          }
+              groupNumber: _groupNum, startDate: _startDate, endDate: _endDate);
+        case 1:
           resp = await repo.getDepartmentSchedule(
-              departmentNumber: _deptNum!,
-              startDate: _startDate,
-              endDate: _endDate);
-        case 2: // Course
-          final courseNum = int.tryParse(_courseController.text.trim());
-          if (courseNum == null) {
-            setState(() { _loading = false; _lessons = []; });
-            return;
-          }
+              departmentNumber: _deptNum!, startDate: _startDate, endDate: _endDate);
+        case 2:
           resp = await repo.getCourseSchedule(
-              courseNumber: courseNum,
-              startDate: _startDate,
-              endDate: _endDate);
-        case 3: // Faculty
-          if (_facultyNum == null) {
-            setState(() { _loading = false; _lessons = []; });
-            return;
-          }
+              courseNumber: courseNum!, startDate: _startDate, endDate: _endDate);
+        case 3:
           resp = await repo.getFacultySchedule(
-              facultyNumber: _facultyNum!,
-              startDate: _startDate,
-              endDate: _endDate);
-          // load faculty's own groups so we can filter cross-faculty noise
+              facultyNumber: _facultyNum!, startDate: _startDate, endDate: _endDate);
           if (_facultyId != null) {
             try {
               final fGroups = await ref
@@ -217,37 +277,33 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                   .getFacultyGroups(_facultyId!);
               _facultyGroupNums = fGroups
                   .map((g) => (g as Map<String, dynamic>))
-                  .map((g) =>
-                      g['name']?.toString() ??
-                      g['number']?.toString() ??
-                      '')
+                  .map((g) => g['name']?.toString() ?? g['number']?.toString() ?? '')
                   .where((s) => s.isNotEmpty)
                   .toSet();
+              await cache.set('schedule_faculty_groups_$_facultyId', _facultyGroupNums.toList());
             } catch (_) {
               _facultyGroupNums = {};
             }
           }
-        default: // Location
+        default:
           resp = await repo.getLocationSchedule(
-              locationNumber: _locationNum,
-              startDate: _startDate,
-              endDate: _endDate);
+              locationNumber: _locationNum, startDate: _startDate, endDate: _endDate);
       }
 
       if (!mounted) return;
       final rawLessons = resp['lessons'];
-      setState(() {
-        _lessons = (rawLessons as List<dynamic>? ?? [])
-            .map((l) => l as Map<String, dynamic>)
-            .toList();
-        _loading = false;
-      });
+      final lessons = (rawLessons as List<dynamic>? ?? [])
+          .map((l) => l as Map<String, dynamic>)
+          .toList();
+      await cache.set(cacheKey, lessons);
+      final prevLessons = List<Map<String, dynamic>>.from(_lessons);
+      setState(() { _lessons = lessons; _loading = false; });
+      _fireScheduleNotifications(prevLessons, lessons);
     } on DioException catch (e) {
       if (!mounted) return;
       final code = e.response?.statusCode;
       print('[Schedule] DioException $code ${e.requestOptions.path}: ${e.message}');
       if (code == 404) {
-        // entity not found in schedule service → empty schedule, not an error
         setState(() { _loading = false; _lessons = []; });
         return;
       }
@@ -258,10 +314,104 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
     } catch (e) {
       if (!mounted) return;
       print('[Schedule] error: $e');
-      setState(() {
-        _loading = false;
-        _error = e.toString();
-      });
+      setState(() { _loading = false; _error = e.toString(); });
+    }
+  }
+
+  Future<void> _fireScheduleNotifications(
+    List<Map<String, dynamic>> prev,
+    List<Map<String, dynamic>> next,
+  ) async {
+    if (prev.isEmpty) return; // перший завантаження — не порівнювати
+    final role = ref.read(authViewModelProvider).role ?? '';
+    final notifSvc = ref.read(notificationServiceProvider);
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(NotifKey.master) ?? true)) return;
+
+    String _lessonName(Map<String, dynamic> l) {
+      final disc = l['discipline'] as Map<String, dynamic>?;
+      return disc?['shortName'] as String? ??
+          disc?['fullName'] as String? ??
+          l['name'] as String? ?? 'Заняття';
+    }
+
+    final prevById = {for (final l in prev) l['id']: l};
+    final nextById = {for (final l in next) l['id']: l};
+
+    // ── Скасування занять ─────────────────────────────────────────────────
+    final cancelKey = role == UserRole.instructor
+        ? NotifKey.classCancellation
+        : NotifKey.classCancellation;
+    if (prefs.getBool(cancelKey) ??
+        NotificationSettings.defaultsForRole(role).toggles[cancelKey] ?? false) {
+      for (final entry in prevById.entries) {
+        if (!nextById.containsKey(entry.key)) {
+          await notifSvc.show(
+            id: (entry.key as int? ?? 0) % 65535 + 10000,
+            title: 'Заняття скасовано',
+            body: _lessonName(entry.value),
+          );
+        }
+      }
+    }
+
+    // ── Зміни в розкладі (аудиторія або час) ─────────────────────────────
+    final changeKey = (role == UserRole.instructor || role == UserRole.departmentHead)
+        ? NotifKey.myScheduleChanges
+        : NotifKey.scheduleChanges;
+    if (prefs.getBool(changeKey) ??
+        NotificationSettings.defaultsForRole(role).toggles[changeKey] ?? false) {
+      for (final entry in nextById.entries) {
+        final old = prevById[entry.key];
+        if (old == null) continue;
+        final newL = entry.value;
+        final oldRoom = (old['audiences'] as List?)
+            ?.whereType<Map>().firstOrNull?['number']?.toString();
+        final newRoom = (newL['audiences'] as List?)
+            ?.whereType<Map>().firstOrNull?['number']?.toString();
+        final oldTime = old['startTime'] as String?;
+        final newTime = newL['startTime'] as String?;
+        if (oldRoom != newRoom || oldTime != newTime) {
+          await notifSvc.show(
+            id: (entry.key as int? ?? 0) % 65535 + 20000,
+            title: 'Зміна в розкладі',
+            body: newRoom != null
+                ? '${_lessonName(newL)} → ауд. $newRoom'
+                : _lessonName(newL),
+          );
+        }
+      }
+    }
+
+    // ── Нагадування перед заняттям — планується через zonedSchedule ─────
+    final reminderKey = NotifKey.beforeClassReminder;
+    if (prefs.getBool(reminderKey) ??
+        NotificationSettings.defaultsForRole(role).toggles[reminderKey] ?? false) {
+      final timeOpt   = prefs.getString(NotifKey.beforeClassTime) ?? '15m';
+      final offsetMin = timeOpt == '1h' ? 60 : timeOpt == '30m' ? 30 : 15;
+      final now       = DateTime.now();
+      for (final l in next) {
+        final stStr = l['startTime'] as String?;
+        if (stStr == null) continue;
+        final st = DateTime.tryParse(stStr);
+        if (st == null || st.isBefore(now)) continue;
+        // Тільки сьогоднішні та завтрашні заняття
+        final daysAhead = st.difference(DateTime(now.year, now.month, now.day)).inDays;
+        if (daysAhead > 1) continue;
+        final lessonId   = l['id'] as int? ?? 0;
+        final notifId    = lessonId % 65535 + 30000;
+        final remindAt   = st.subtract(Duration(minutes: offsetMin));
+        final hh = st.hour.toString().padLeft(2, '0');
+        final mm = st.minute.toString().padLeft(2, '0');
+        // Скасовуємо попередньо заплановане (на випадок зміни розкладу)
+        await notifSvc.cancelScheduled(notifId);
+        await notifSvc.scheduleBeforeClass(
+          id:            notifId,
+          title:         'Незабаром заняття',
+          body:          '${_lessonName(l)} о $hh:$mm',
+          scheduledTime: remindAt,
+        );
+      }
     }
   }
 
@@ -618,54 +768,72 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
             ]),
           ),
           const Divider(height: 1),
-          if (_loading)
+          if (_loading && _lessons.isEmpty)
             const Expanded(child: Center(child: CircularProgressIndicator()))
           else if (_error != null)
             Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Не вдалося завантажити розклад',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red),
-                  ),
+              child: RefreshIndicator(
+                onRefresh: _fetchSchedule,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    SizedBox(height: 80),
+                    Center(child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'Не вдалося завантажити розклад',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    )),
+                  ],
                 ),
               ),
             )
           else if (_tabIndex == 0)
             Expanded(
-              child: _GroupScheduleGrid(
-                groupGrid: groupGrid!,
-                weekStart: _weekStart,
-                isToday: _isToday,
-                scale: _scale,
+              child: RefreshIndicator(
+                onRefresh: _fetchSchedule,
+                child: _GroupScheduleGrid(
+                  groupGrid: groupGrid!,
+                  weekStart: _weekStart,
+                  isToday: _isToday,
+                  scale: _scale,
+                ),
               ),
             )
           else if (rows.isEmpty)
-            const Expanded(
-              child: Center(
-                child: Text('Розклад відсутній на цей тиждень',
-                    style: TextStyle(color: AppTheme.textMid)),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _fetchSchedule,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    SizedBox(height: 80),
+                    Center(child: Text('Розклад відсутній на цей тиждень',
+                        style: TextStyle(color: AppTheme.textMid))),
+                  ],
+                ),
               ),
             )
           else
             Expanded(
-              child: _ScheduleGrid(
-                rows: rows,
-                grid: grid,
-                weekStart: _weekStart,
-                isToday: _isToday,
-                scale: _scale,
-                isLocationMode: _tabIndex == 4,
-                rowHeader: _tabIndex == 4
-                    ? 'Ауд.'
-                    : _tabIndex == 1
-                        ? 'Викладач'
-                        : 'Група',
-                // dept(1) and location(4) rows ≠ groups → show groups in secondary
-                // course(2) and faculty(3) rows = groups → show teachers in secondary
-                showGroupSecondary: _tabIndex == 1 || _tabIndex == 4,
+              child: RefreshIndicator(
+                onRefresh: _fetchSchedule,
+                child: _ScheduleGrid(
+                  rows: rows,
+                  grid: grid,
+                  weekStart: _weekStart,
+                  isToday: _isToday,
+                  scale: _scale,
+                  isLocationMode: _tabIndex == 4,
+                  rowHeader: _tabIndex == 4
+                      ? 'Ауд.'
+                      : _tabIndex == 1
+                          ? 'Викладач'
+                          : 'Група',
+                  showGroupSecondary: _tabIndex == 1 || _tabIndex == 4,
+                ),
               ),
             ),
         ],
@@ -708,6 +876,7 @@ class _ScheduleGrid extends StatelessWidget {
 
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
+      physics: const AlwaysScrollableScrollPhysics(),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Column(
@@ -979,6 +1148,7 @@ class _GroupScheduleGrid extends StatelessWidget {
 
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
+      physics: const AlwaysScrollableScrollPhysics(),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Column(

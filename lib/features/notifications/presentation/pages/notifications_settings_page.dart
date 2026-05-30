@@ -58,6 +58,12 @@ class _NotifCategory {
 // ─────────────────────────────────────────────────────────────────────────────
 
 List<_NotifCategory> _categoriesForRole(String role) {
+  const _beforeClassTimingOptions = [
+    _TimingOption('15m', '15 хвилин'),
+    _TimingOption('30m', '30 хвилин'),
+    _TimingOption('1h',  '1 годину'),
+  ];
+
   switch (role) {
     case UserRole.cadet:
       return [
@@ -67,29 +73,16 @@ List<_NotifCategory> _categoriesForRole(String role) {
           color: const Color(0xFF0284C7),
           items: [
             _NotifItemData(
-              icon: Icons.assignment_turned_in_rounded,
-              key: NotifKey.importantClasses,
-              title: 'Важливі заняття',
-              subtitle: 'Заліки, іспити, модульні КР, практичні роботи',
-              timingKey: NotifKey.importantClassesTime,
-              timingLabel: 'Нагадати за:',
-              timingOptions: const [
-                _TimingOption('1h',  '1 годину'),
-                _TimingOption('24h', '24 години'),
-                _TimingOption('48h', '48 годин'),
-              ],
-            ),
-            _NotifItemData(
               icon: Icons.grade_rounded,
               key: NotifKey.newGrades,
               title: 'Нові оцінки',
-              subtitle: 'Коли викладач виставляє нову оцінку',
+              subtitle: 'Сповіщення, коли викладач виставляє оцінку',
             ),
             _NotifItemData(
               icon: Icons.warning_amber_rounded,
               key: NotifKey.lowGrades,
               title: 'Низькі оцінки',
-              subtitle: 'Якщо виставлена оцінка нижче 60 балів',
+              subtitle: 'Якщо поточна успішність з дисципліни нижче 60%',
             ),
           ],
         ),
@@ -99,29 +92,25 @@ List<_NotifCategory> _categoriesForRole(String role) {
           color: const Color(0xFF059669),
           items: [
             _NotifItemData(
+              icon: Icons.alarm_rounded,
+              key: NotifKey.beforeClassReminder,
+              title: 'Нагадування перед заняттям',
+              subtitle: 'Завчасне повідомлення про початок заняття',
+              timingKey: NotifKey.beforeClassTime,
+              timingLabel: 'Нагадати за:',
+              timingOptions: _beforeClassTimingOptions,
+            ),
+            _NotifItemData(
               icon: Icons.update_rounded,
               key: NotifKey.scheduleChanges,
               title: 'Зміни в розкладі',
-              subtitle: 'Переноси, нові заняття або зміни аудиторій',
+              subtitle: 'Переноси або зміна аудиторій',
             ),
             _NotifItemData(
               icon: Icons.event_busy_rounded,
               key: NotifKey.classCancellation,
               title: 'Скасування занять',
               subtitle: 'Коли одне з ваших занять скасовано',
-            ),
-          ],
-        ),
-        _NotifCategory(
-          icon: Icons.campaign_rounded,
-          title: 'Оголошення',
-          color: const Color(0xFF7C3AED),
-          items: [
-            _NotifItemData(
-              icon: Icons.announcement_rounded,
-              key: NotifKey.deptAnnouncements,
-              title: 'Повідомлення від кафедри',
-              subtitle: 'Важливі оголошення, накази та розпорядження',
             ),
           ],
         ),
@@ -140,19 +129,6 @@ List<_NotifCategory> _categoriesForRole(String role) {
               title: 'Незаповнені журнали',
               subtitle: 'Нагадування про журнали, що потребують заповнення',
             ),
-            _NotifItemData(
-              icon: Icons.alarm_rounded,
-              key: NotifKey.beforeClassReminder,
-              title: 'Нагадування перед заняттям',
-              subtitle: 'Завчасне повідомлення про початок заняття',
-              timingKey: NotifKey.beforeClassTime,
-              timingLabel: 'Нагадати за:',
-              timingOptions: const [
-                _TimingOption('15m', '15 хвилин'),
-                _TimingOption('30m', '30 хвилин'),
-                _TimingOption('1h',  '1 годину'),
-              ],
-            ),
           ],
         ),
         _NotifCategory(
@@ -160,6 +136,15 @@ List<_NotifCategory> _categoriesForRole(String role) {
           title: 'Розклад',
           color: const Color(0xFF059669),
           items: [
+            _NotifItemData(
+              icon: Icons.alarm_rounded,
+              key: NotifKey.beforeClassReminder,
+              title: 'Нагадування перед заняттям',
+              subtitle: 'Завчасне повідомлення про початок заняття',
+              timingKey: NotifKey.beforeClassTime,
+              timingLabel: 'Нагадати за:',
+              timingOptions: _beforeClassTimingOptions,
+            ),
             _NotifItemData(
               icon: Icons.manage_history_rounded,
               key: NotifKey.myScheduleChanges,
@@ -179,124 +164,41 @@ List<_NotifCategory> _categoriesForRole(String role) {
     case UserRole.departmentHead:
       return [
         _NotifCategory(
-          icon: Icons.bar_chart_rounded,
-          title: 'Успішність кафедри',
-          color: const Color(0xFF0891B2),
-          items: [
-            _NotifItemData(
-              icon: Icons.summarize_rounded,
-              key: NotifKey.weeklyDigest,
-              title: 'Тижневий дайджест',
-              subtitle: 'Щотижневий звіт успішності всіх груп кафедри',
-            ),
-            _NotifItemData(
-              icon: Icons.trending_down_rounded,
-              key: NotifKey.criticalPerformance,
-              title: 'Критична успішність',
-              subtitle: 'Якщо середній бал групи падає нижче 60%',
-            ),
-            _NotifItemData(
-              icon: Icons.calendar_view_month_rounded,
-              key: NotifKey.monthlyReport,
-              title: 'Місячний звіт',
-              subtitle: 'Детальний аналітичний звіт у кінці місяця',
-            ),
-          ],
-        ),
-        _NotifCategory(
           icon: Icons.book_rounded,
-          title: 'Журнали викладачів',
+          title: 'Журнали',
           color: AppTheme.primary,
           items: [
             _NotifItemData(
-              icon: Icons.edit_off_rounded,
-              key: NotifKey.unfilledInstructorJournals,
+              icon: Icons.edit_note_rounded,
+              key: NotifKey.unfilledJournals,
               title: 'Незаповнені журнали',
-              subtitle: 'Журнали, які викладачі ще не заповнили',
-            ),
-            _NotifItemData(
-              icon: Icons.timer_off_rounded,
-              key: NotifKey.overdueJournals,
-              title: 'Прострочені журнали',
-              subtitle: 'Журнали, термін подачі яких вже минув',
+              subtitle: 'Нагадування про журнали кафедри без виставлених оцінок',
             ),
           ],
         ),
         _NotifCategory(
           icon: Icons.calendar_month_rounded,
-          title: 'Розклад кафедри',
+          title: 'Розклад',
           color: const Color(0xFF059669),
           items: [
             _NotifItemData(
-              icon: Icons.schedule_rounded,
-              key: NotifKey.deptSchedule,
+              icon: Icons.manage_history_rounded,
+              key: NotifKey.myScheduleChanges,
               title: 'Зміни в розкладі',
-              subtitle: 'Будь-які зміни в розкладі всієї кафедри',
+              subtitle: 'Зміни у розкладі кафедри',
+            ),
+            _NotifItemData(
+              icon: Icons.event_busy_rounded,
+              key: NotifKey.classCancellation,
+              title: 'Скасування занять',
+              subtitle: 'Скасування занять кафедри',
             ),
           ],
         ),
       ];
 
-    default: // SUPER_ADMIN, FACULTY_EDUCATION_OFFICE, INSTITUTE_EDUCATION_OFFICE
-      return [
-        _NotifCategory(
-          icon: Icons.settings_suggest_rounded,
-          title: 'Система',
-          color: const Color(0xFF475569),
-          items: [
-            _NotifItemData(
-              icon: Icons.person_add_alt_1_rounded,
-              key: NotifKey.newUsers,
-              title: 'Нові реєстрації',
-              subtitle: 'Нові користувачі, що очікують підтвердження',
-            ),
-            _NotifItemData(
-              icon: Icons.sync_problem_rounded,
-              key: NotifKey.syncErrors,
-              title: 'Помилки синхронізації',
-              subtitle: 'Критичні збої при синхронізації даних',
-            ),
-          ],
-        ),
-        _NotifCategory(
-          icon: Icons.bar_chart_rounded,
-          title: 'Аналітика та звіти',
-          color: const Color(0xFF0891B2),
-          items: [
-            _NotifItemData(
-              icon: Icons.assessment_rounded,
-              key: NotifKey.weeklyReports,
-              title: 'Тижневі звіти',
-              subtitle: 'Щотижневий зріз успішності по факультету/інституту',
-            ),
-            _NotifItemData(
-              icon: Icons.notifications_active_rounded,
-              key: NotifKey.criticalIndicators,
-              title: 'Критичні показники',
-              subtitle: 'Різке падіння успішності або відвідуваності',
-            ),
-          ],
-        ),
-        _NotifCategory(
-          icon: Icons.account_tree_rounded,
-          title: 'Структура',
-          color: const Color(0xFFD97706),
-          items: [
-            _NotifItemData(
-              icon: Icons.group_add_rounded,
-              key: NotifKey.groupChanges,
-              title: 'Зміни в групах',
-              subtitle: 'Додавання, видалення або перейменування груп',
-            ),
-            _NotifItemData(
-              icon: Icons.library_add_rounded,
-              key: NotifKey.disciplineChanges,
-              title: 'Зміни в дисциплінах',
-              subtitle: 'Нові або змінені навчальні дисципліни',
-            ),
-          ],
-        ),
-      ];
+    default:
+      return [];
   }
 }
 

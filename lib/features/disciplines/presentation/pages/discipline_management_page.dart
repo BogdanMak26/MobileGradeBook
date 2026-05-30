@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/repositories.dart';
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/add_discipline_sheet.dart';
+import '../../../../shared/widgets/add_discipline_sheet.dart'
+    show showAddDisciplineSheet, showEditDisciplineSheet;
 import '../../data/repositories/disciplines_repository.dart';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -238,6 +239,18 @@ class _DisciplinesTabState extends ConsumerState<_DisciplinesTab> {
     }
   }
 
+  void _editDiscipline(Map<String, dynamic> d) {
+    final name  = (d['name']      ?? d['fullName']  ?? '').toString();
+    final short = (d['shortName'] ?? d['short']     ?? '').toString();
+    showEditDisciplineSheet(
+      context,
+      disciplineId: d['id'] as int,
+      name:         name,
+      shortName:    short,
+      onUpdated:    widget.onReload,
+    );
+  }
+
   void _deleteDiscipline(Map<String, dynamic> d) {
     showDialog(
       context: context,
@@ -389,6 +402,14 @@ class _DisciplinesTabState extends ConsumerState<_DisciplinesTab> {
                                 ],
                               ),
                             ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined,
+                                  size: 18, color: AppTheme.textMid),
+                              onPressed: () => _editDiscipline(d),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 4),
                             IconButton(
                               icon: const Icon(Icons.delete_outline,
                                   size: 18, color: AppTheme.textMid),

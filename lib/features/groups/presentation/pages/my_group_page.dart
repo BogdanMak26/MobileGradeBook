@@ -103,49 +103,71 @@ class _AllGroupsPageState extends ConsumerState<AllGroupsPage> {
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
+    if (_isLoading && _groups.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
-            const SizedBox(height: 12),
-            Text('Помилка: $_error',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textMid)),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+            const SizedBox(height: 80),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                  const SizedBox(height: 12),
+                  Text('Помилка: $_error',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.textMid)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(onPressed: _load, child: const Text('Повторити')),
+                ],
+              ),
+            ),
           ],
         ),
       );
     }
     final filtered = _filtered;
     if (filtered.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Icon(Icons.people_outline, size: 56, color: Colors.grey.shade300),
-            const SizedBox(height: 12),
-            Text('Груп не знайдено',
-                style: TextStyle(color: Colors.grey.shade500)),
+            const SizedBox(height: 80),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.people_outline, size: 56, color: Colors.grey.shade300),
+                  const SizedBox(height: 12),
+                  Text('Груп не знайдено',
+                      style: TextStyle(color: Colors.grey.shade500)),
+                ],
+              ),
+            ),
           ],
         ),
       );
     }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.85,
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: GridView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: filtered.length,
+        itemBuilder: (context, i) => _GroupCard(group: filtered[i]),
       ),
-      itemCount: filtered.length,
-      itemBuilder: (context, i) => _GroupCard(group: filtered[i]),
     );
   }
 }
@@ -302,7 +324,9 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage> {
           child: Container(height: 3, color: AppTheme.primary),
         ),
       ),
-      body: CustomScrollView(
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
@@ -404,6 +428,7 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage> {
               ),
             ),
         ],
+      ),
       ),
     );
   }
@@ -515,7 +540,9 @@ class _MyGroupPageState extends ConsumerState<MyGroupPage> {
                     ],
                   ),
                 )
-              : CustomScrollView(
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(
                       child: Padding(
@@ -581,6 +608,7 @@ class _MyGroupPageState extends ConsumerState<MyGroupPage> {
                       ),
                     ),
                   ],
+                ),
                 ),
     );
   }

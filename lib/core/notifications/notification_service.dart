@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 const _androidChannel = AndroidNotificationChannel(
   'gradebook_channel',
@@ -101,6 +102,45 @@ class NotificationService {
     );
     await _plugin.show(id, title, body, details);
   }
+
+  /// Планує сповіщення на конкретний час (працює коли застосунок закритий).
+  Future<void> scheduleBeforeClass({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+  }) async {
+    if (!_initialized) await initialize();
+    final tzTime = tz.TZDateTime.from(scheduledTime, tz.local);
+    if (tzTime.isBefore(DateTime.now())) return;
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      ),
+    );
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      tzTime,
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  Future<void> cancelScheduled(int id) => _plugin.cancel(id);
 }
 
 final notificationServiceProvider =

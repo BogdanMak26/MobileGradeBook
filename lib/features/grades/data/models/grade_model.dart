@@ -43,6 +43,24 @@ class GradeJournalResponse {
     required this.lessons,
   });
 
+  Map<String, dynamic> toJson() => {
+        'journalId': journalId,
+        'lessons': lessons.map((l) => l.toJson()).toList(),
+        'cadets': cadets.map((c) => c.toJson()).toList(),
+      };
+
+  factory GradeJournalResponse.fromCacheJson(Map<String, dynamic> json) {
+    return GradeJournalResponse(
+      journalId: json['journalId'] as int,
+      lessons: (json['lessons'] as List<dynamic>)
+          .map((l) => LessonModel.fromJson(l as Map<String, dynamic>))
+          .toList(),
+      cadets: (json['cadets'] as List<dynamic>)
+          .map((c) => JournalCadet.fromCacheJson(c as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
   factory GradeJournalResponse.fromJson(Map<String, dynamic> json) {
     final journalId = json['journalId'] as int? ?? json['id'] as int? ?? 0;
     final lessonsRaw = json['lessons'] as List<dynamic>? ?? [];
@@ -140,6 +158,42 @@ class JournalCadet {
     this.markIdByLessonId = const {},
     this.attendIdByLessonId = const {},
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'fullName': fullName,
+        'gradesByLessonId':
+            gradesByLessonId.map((k, v) => MapEntry(k.toString(), v)),
+        'statusByLessonId':
+            statusByLessonId.map((k, v) => MapEntry(k.toString(), v)),
+        'markIdByLessonId':
+            markIdByLessonId.map((k, v) => MapEntry(k.toString(), v)),
+        'attendIdByLessonId':
+            attendIdByLessonId.map((k, v) => MapEntry(k.toString(), v)),
+      };
+
+  factory JournalCadet.fromCacheJson(Map<String, dynamic> json) {
+    Map<int, T?> parseNullable<T>(dynamic raw) {
+      if (raw == null) return {};
+      return (raw as Map<String, dynamic>)
+          .map((k, v) => MapEntry(int.parse(k), v as T?));
+    }
+
+    Map<int, T> parseNonNull<T>(dynamic raw) {
+      if (raw == null) return {};
+      return (raw as Map<String, dynamic>)
+          .map((k, v) => MapEntry(int.parse(k), v as T));
+    }
+
+    return JournalCadet(
+      id: json['id'] as int,
+      fullName: json['fullName'] as String? ?? '',
+      gradesByLessonId: parseNullable<double>(json['gradesByLessonId']),
+      statusByLessonId: parseNullable<String>(json['statusByLessonId']),
+      markIdByLessonId: parseNonNull<int>(json['markIdByLessonId']),
+      attendIdByLessonId: parseNonNull<int>(json['attendIdByLessonId']),
+    );
+  }
 
   factory JournalCadet.fromJson(Map<String, dynamic> json) {
     final grades = <int, double?>{};

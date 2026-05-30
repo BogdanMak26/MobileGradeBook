@@ -35,6 +35,22 @@ class JournalModel {
   bool get hasMeet => meetLink != null && meetLink!.isNotEmpty;
   bool get hasMoodle => moodleLink != null && moodleLink!.isNotEmpty;
 
+  Map<String, dynamic> toJson() => {
+        'journalId': id,
+        'semesterId': semesterId,
+        'groupId': groupId,
+        'groupName': groupName,
+        'disciplineId': disciplineId,
+        'disciplineName': disciplineName,
+        'semester': semester,
+        'startDate': startDate,
+        'endDate': endDate,
+        'academicYear': academicYear,
+        'driveLink': driveLink,
+        'meetLink': meetLink,
+        'moodleLink': moodleLink,
+      };
+
   factory JournalModel.fromJson(Map<String, dynamic> json) {
     final group = json['group'] as Map<String, dynamic>?;
     final discipline = json['discipline'] as Map<String, dynamic>?;

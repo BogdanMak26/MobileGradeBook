@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'core/background/background_tasks.dart';
 import 'core/local/local_cache.dart';
 import 'core/local/offline_queue.dart';
 import 'core/notifications/fcm_service.dart';
@@ -20,6 +24,14 @@ void main() async {
   await initializeDateFormatting('uk', null);
   final prefs = await SharedPreferences.getInstance();
   await NotificationService().initialize();
+
+  // Ініціалізація timezone для планованих сповіщень
+  tz.initializeTimeZones();
+  final timezoneInfo = await FlutterTimezone.getLocalTimezone();
+  tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
+
+  // Реєстрація фонових задач (workmanager)
+  await BackgroundTasks.register();
 
   runApp(ProviderScope(
     overrides: [
