@@ -12,6 +12,7 @@ import '../utils/app_constants.dart';
 
 const _kGradesCheckTask = 'com.viti.gradebook.gradesCheck';
 const _kJournalsReminderTask = 'com.viti.gradebook.journalsReminder';
+const _kOfflineSyncTask = 'com.viti.gradebook.offlineSync';
 
 /// Ключ у SharedPreferences: true якщо є незаповнені журнали (встановлює foreground)
 const kUnfilledJournalsFlag = 'bg_has_unfilled_journals';
@@ -28,6 +29,8 @@ void backgroundCallbackDispatcher() {
           await _runGradesCheck();
         case _kJournalsReminderTask:
           await _runJournalsReminder();
+        case _kOfflineSyncTask:
+          await _runOfflineSync();
       }
     } catch (_) {}
     return true;
@@ -224,14 +227,62 @@ Future<void> _runJournalsReminder() async {
   );
 }
 
+// ── Фонова синхронізація офлайн-черги ─────────────────────────────────────────
+
+Future<void> _runOfflineSync() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString('offline_queue');
+  if (raw == null || raw.isEmpty) return;
+
+  final token = await _getValidToken();
+  if (token == null) return;
+
+  List<dynamic> ops;
+  try {
+    ops = jsonDecode(raw) as List<dynamic>;
+  } catch (_) {
+    return;
+  }
+  if (ops.isEmpty) return;
+
+  final dio = Dio(BaseOptions(
+    baseUrl: AppConstants.baseUrl,
+    connectTimeout: const Duration(seconds: 20),
+    receiveTimeout: const Duration(seconds: 20),
+  ));
+  dio.options.headers['Authorization'] = 'Bearer $token';
+
+  final remaining = <dynamic>[];
+  for (final opJson in ops) {
+    final op = Map<String, dynamic>.from(opJson as Map);
+    try {
+      switch (op['method'] as String) {
+        case 'POST':
+          await dio.post(op['path'] as String, data: op['data']);
+        case 'PUT':
+          await dio.put(op['path'] as String, data: op['data']);
+        case 'PATCH':
+          await dio.patch(op['path'] as String, data: op['data']);
+        case 'DELETE':
+          await dio.delete(op['path'] as String);
+      }
+    } catch (_) {
+      remaining.add(opJson);
+    }
+  }
+
+  if (remaining.isEmpty) {
+    await prefs.remove('offline_queue');
+  } else {
+    await prefs.setString('offline_queue', jsonEncode(remaining));
+  }
+}
+
 // ── Публічний клас для реєстрації задач ───────────────────────────────────────
 
 class BackgroundTasks {
   static Future<void> register() async {
-    await Workmanager().initialize(
-      backgroundCallbackDispatcher,
-      isInDebugMode: false,
-    );
+    await Workmanager().initialize(backgroundCallbackDispatcher);
 
     // Курсанти: перевірка нових оцінок щогодини
     await Workmanager().registerPeriodicTask(

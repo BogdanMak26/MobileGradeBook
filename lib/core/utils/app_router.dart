@@ -394,9 +394,10 @@ class _MoreMenu extends ConsumerWidget {
         ),
       ),
       child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             Container(
               margin: const EdgeInsets.only(top: 12),
               width: 40, height: 4,
@@ -466,6 +467,7 @@ class _MoreMenu extends ConsumerWidget {
                 }),
             const SizedBox(height: 16),
           ],
+        ),
         ),
       ),
     );

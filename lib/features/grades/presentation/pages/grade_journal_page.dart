@@ -295,32 +295,36 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
         children: [
           Column(
             children: [
+              if (MediaQuery.of(context).orientation == Orientation.portrait)
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: const Row(children: [SyncStatusChip()]),
+                ),
               Container(
                 color: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                child: Row(
-                  children: [
-                    const SyncStatusChip(),
-                  ],
-                ),
-              ),
-              Container(
-                color: Colors.white,
-                child: TabBar(
-                  controller: _tab,
-                  indicatorColor: AppTheme.primary,
-                  labelColor: AppTheme.primary,
-                  unselectedLabelColor: AppTheme.textMid,
-                  labelStyle: const TextStyle(
-                      fontSize: 10, fontWeight: FontWeight.w600),
-                  unselectedLabelStyle: const TextStyle(fontSize: 10),
-                  tabs: [
-                    _TabItem(icon: Icons.bar_chart, label: 'Журнал'),
-                    _TabItem(
-                        icon: Icons.menu_book_outlined, label: 'Заняття'),
-                    _TabItem(icon: Icons.link, label: 'Посилання'),
-                  ],
-                ),
+                child: Builder(builder: (ctx) {
+                  final landscape = MediaQuery.of(ctx).orientation == Orientation.landscape;
+                  return TabBar(
+                    controller: _tab,
+                    indicatorColor: AppTheme.primary,
+                    labelColor: AppTheme.primary,
+                    unselectedLabelColor: AppTheme.textMid,
+                    labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                    unselectedLabelStyle: const TextStyle(fontSize: 10),
+                    tabs: landscape
+                        ? const [
+                            Tab(icon: Icon(Icons.bar_chart, size: 18)),
+                            Tab(icon: Icon(Icons.menu_book_outlined, size: 18)),
+                            Tab(icon: Icon(Icons.link, size: 18)),
+                          ]
+                        : const [
+                            _TabItem(icon: Icons.bar_chart, label: 'Журнал'),
+                            _TabItem(icon: Icons.menu_book_outlined, label: 'Заняття'),
+                            _TabItem(icon: Icons.link, label: 'Посилання'),
+                          ],
+                  );
+                }),
               ),
               Expanded(
                 child: TabBarView(
@@ -696,14 +700,17 @@ class _GradesTabState extends State<_GradesTab> {
   bool _syncing = false;
 
   // Layout constants
-  static const double _attW    = 36.0;  // attendance sub-column
-  static const double _scoreW  = 46.0;  // score sub-column
-  static const double _headH   = 36.0;  // lesson code header row
-  static const double _dateH   = 22.0;  // date row
-  static const double _subH    = 18.0;  // sub-label row (Пр | Бал)
-  static const double _rowH    = 42.0;  // data row
-  static const double _footerH = 28.0;  // max-score footer row
-  static const double _fixedW  = 180.0;
+  static const double _attW   = 36.0;
+  static const double _scoreW = 46.0;
+  static const double _fixedW = 180.0;
+
+  // Adaptive heights: компактніші у landscape щоб всі рядки вмістились
+  bool get _compact => MediaQuery.of(context).orientation == Orientation.landscape;
+  double get _headH   => _compact ? 20.0 : 36.0;
+  double get _dateH   => _compact ? 13.0 : 22.0;
+  double get _subH    => _compact ? 10.0 : 18.0;
+  double get _rowH    => _compact ? 30.0 : 42.0;
+  double get _footerH => _compact ?  0.0 : 28.0;
 
   double _lessonW(Map<String, dynamic> l) =>
       (l['maxScore'] as double?) != null ? _attW + _scoreW : _attW;
@@ -918,28 +925,30 @@ class _GradesTabState extends State<_GradesTab> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           title: Text(_shortName(name),
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${widget.lessons[lessonIdx]['code']} · Макс: $maxScore',
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: ctrl,
-                autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Оцінка',
-                  hintText: '0 – $maxScore',
-                  errorText: errorText,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  suffixText: '/ $maxScore',
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${widget.lessons[lessonIdx]['code']} · Макс: $maxScore',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textMid)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Оцінка',
+                    hintText: '0 – $maxScore',
+                    errorText: errorText,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    suffixText: '/ $maxScore',
+                  ),
+                  onChanged: (_) => setDS(() => errorText = null),
                 ),
-                onChanged: (_) => setDS(() => errorText = null),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Скасувати')),
@@ -978,23 +987,25 @@ class _GradesTabState extends State<_GradesTab> {
     final lessons = widget.lessons;
 
     return Column(children: [
-      // Stats bar
-      Container(
-        color: Colors.white,
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-        child: Row(children: [
-          _StatBadge(label: 'Курсантів', value: '${cadets.length}', color: AppTheme.secondary),
-          const SizedBox(width: 10),
-          _StatBadge(label: 'Занять', value: '${lessons.length}', color: const Color(0xFF0284C7)),
-          const Spacer(),
-          _LegendDot(color: const Color(0xFF16A34A), label: '≥75%'),
-          const SizedBox(width: 8),
-          _LegendDot(color: const Color(0xFFD97706), label: '60-74%'),
-          const SizedBox(width: 8),
-          _LegendDot(color: const Color(0xFFDC2626), label: '<60%'),
-        ]),
-      ),
-      const Divider(height: 1),
+      // Stats bar — прихований у landscape щоб звільнити місце для таблиці
+      if (!_compact) ...[
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(children: [
+            _StatBadge(label: 'Курсантів', value: '${cadets.length}', color: AppTheme.secondary),
+            const SizedBox(width: 10),
+            _StatBadge(label: 'Занять', value: '${lessons.length}', color: const Color(0xFF0284C7)),
+            const Spacer(),
+            _LegendDot(color: const Color(0xFF16A34A), label: '≥75%'),
+            const SizedBox(width: 8),
+            _LegendDot(color: const Color(0xFFD97706), label: '60-74%'),
+            const SizedBox(width: 8),
+            _LegendDot(color: const Color(0xFFDC2626), label: '<60%'),
+          ]),
+        ),
+        const Divider(height: 1),
+      ],
 
       // Table
       Expanded(
@@ -1074,6 +1085,13 @@ class _GradesTabState extends State<_GradesTab> {
                                 final initials = parts.length > 1
                                     ? parts.skip(1).where((p) => p.isNotEmpty).join(' ')
                                     : '';
+                                if (_compact) {
+                                  return Text(
+                                    initials.isNotEmpty ? '$surname $initials' : surname,
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.textDark),
+                                    overflow: TextOverflow.ellipsis, maxLines: 1,
+                                  );
+                                }
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisAlignment: MainAxisAlignment.center,

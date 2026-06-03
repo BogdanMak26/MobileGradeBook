@@ -610,164 +610,196 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Column(children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  _TabChip(
-                      label: 'Група',
-                      selected: _tabIndex == 0,
-                      onTap: () => _selectTab(0)),
-                  if (!isCadet) ...[
-                    const SizedBox(width: 6),
-                    _TabChip(
-                        label: 'Кафедра',
-                        selected: _tabIndex == 1,
-                        onTap: () => _selectTab(1)),
-                  ],
-                  const SizedBox(width: 6),
-                  _TabChip(
-                      label: 'Курс',
-                      selected: _tabIndex == 2,
-                      onTap: () => _selectTab(2)),
-                  const SizedBox(width: 6),
-                  _TabChip(
-                      label: 'Факультет',
-                      selected: _tabIndex == 3,
-                      onTap: () => _selectTab(3)),
-                  if (!isCadet) ...[
-                    const SizedBox(width: 6),
-                    _TabChip(
-                        label: 'Локація',
-                        selected: _tabIndex == 4,
-                        onTap: () => _selectTab(4)),
-                  ],
-                ]),
-              ),
-              const SizedBox(height: 8),
-              if (_tabIndex == 0 || _tabIndex == 2)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppTheme.border),
-                    borderRadius: BorderRadius.circular(8),
+      body: Builder(builder: (ctx) {
+        final landscape = MediaQuery.of(ctx).orientation == Orientation.landscape;
+
+        // Вибір тижня — спільний для обох орієнтацій
+        final weekNavRow = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left, size: 18),
+              onPressed: () {
+                setState(() => _weekStart = _weekStart.subtract(const Duration(days: 7)));
+                _fetchSchedule();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '${DateFormat('dd.MM').format(_weekStart)} – '
+              '${DateFormat('dd.MM').format(_weekStart.add(const Duration(days: 6)))}',
+              style: const TextStyle(fontSize: 12, color: AppTheme.textMid),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.chevron_right, size: 18),
+              onPressed: () {
+                setState(() => _weekStart = _weekStart.add(const Duration(days: 7)));
+                _fetchSchedule();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        );
+
+        // Поле вводу / дропдаун — спільний для обох орієнтацій
+        Widget? inputWidget;
+        if (_tabIndex == 0 || _tabIndex == 2) {
+          inputWidget = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppTheme.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _tabIndex == 0 ? _groupController : _courseController,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintText: _tabIndex == 0 ? 'Група (напр. 221)' : 'Курс (напр. 11)',
+                    hintStyle: const TextStyle(fontSize: 12),
                   ),
-                  child: Row(children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _tabIndex == 0 ? _groupController : _courseController,
-                        style: const TextStyle(fontSize: 13),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          hintText: _tabIndex == 0
-                              ? 'Номер групи (напр. 221)'
-                              : 'Номер курсу (напр. 11, 22)',
-                        ),
-                        keyboardType: TextInputType.number,
-                        onSubmitted: (_) {
-                          if (_tabIndex == 0) {
-                            setState(() => _groupNum = _groupController.text.trim());
-                            if (_groupNum.isNotEmpty) _fetchSchedule();
-                          } else {
-                            _fetchSchedule();
-                          }
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.search, size: 18),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () {
-                        if (_tabIndex == 0) {
-                          setState(() => _groupNum = _groupController.text.trim());
-                          if (_groupNum.isNotEmpty) _fetchSchedule();
-                        } else {
-                          _fetchSchedule();
-                        }
-                      },
-                    ),
-                  ]),
-                )
-              else if (items.isNotEmpty)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppTheme.border),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: DropdownButton<int>(
-                    value: value,
-                    isExpanded: true,
-                    underline: const SizedBox(),
-                    icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-                    items: items,
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() {
-                        switch (_tabIndex) {
-                          case 1:
-                            _deptNum = v;
-                          case 2:
-                            break; // course uses text field
-                          case 3:
-                            _facultyNum = v;
-                            final fac = _faculties.firstWhere(
-                              (f) => _numOf(f) == v,
-                              orElse: () => {},
-                            );
-                            _facultyId = fac['id'] as int?;
-                            _facultyGroupNums = {};
-                          default:
-                            _locationNum = v;
-                        }
-                      });
+                  keyboardType: TextInputType.number,
+                  onSubmitted: (_) {
+                    if (_tabIndex == 0) {
+                      setState(() => _groupNum = _groupController.text.trim());
+                      if (_groupNum.isNotEmpty) _fetchSchedule();
+                    } else {
                       _fetchSchedule();
-                    },
-                  ),
-                ),
-              const SizedBox(height: 4),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left, size: 18),
-                  onPressed: () {
-                    setState(() => _weekStart =
-                        _weekStart.subtract(const Duration(days: 7)));
-                    _fetchSchedule();
+                    }
                   },
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  '${DateFormat('dd.MM').format(_weekStart)} – '
-                  '${DateFormat('dd.MM').format(_weekStart.add(const Duration(days: 6)))}',
-                  style:
-                      const TextStyle(fontSize: 12, color: AppTheme.textMid),
-                ),
-                const SizedBox(width: 6),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right, size: 18),
-                  onPressed: () {
-                    setState(() => _weekStart =
-                        _weekStart.add(const Duration(days: 7)));
+              ),
+              GestureDetector(
+                onTap: () {
+                  if (_tabIndex == 0) {
+                    setState(() => _groupNum = _groupController.text.trim());
+                    if (_groupNum.isNotEmpty) _fetchSchedule();
+                  } else {
                     _fetchSchedule();
-                  },
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ]),
+                  }
+                },
+                child: const Icon(Icons.search, size: 18, color: AppTheme.textMid),
+              ),
             ]),
-          ),
-          const Divider(height: 1),
+          );
+        } else if (items.isNotEmpty) {
+          inputWidget = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppTheme.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: DropdownButton<int>(
+              value: value,
+              isExpanded: true,
+              underline: const SizedBox(),
+              icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+              style: const TextStyle(fontSize: 12, color: AppTheme.textDark),
+              items: items,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  switch (_tabIndex) {
+                    case 1: _deptNum = v;
+                    case 2: break;
+                    case 3:
+                      _facultyNum = v;
+                      final fac = _faculties.firstWhere(
+                        (f) => _numOf(f) == v, orElse: () => {});
+                      _facultyId = fac['id'] as int?;
+                      _facultyGroupNums = {};
+                    default: _locationNum = v;
+                  }
+                });
+                _fetchSchedule();
+              },
+            ),
+          );
+        }
+
+        // Чіпи вкладок
+        final tabChips = SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: [
+            _TabChip(label: 'Група', selected: _tabIndex == 0, onTap: () => _selectTab(0)),
+            if (!isCadet) ...[
+              const SizedBox(width: 6),
+              _TabChip(label: 'Кафедра', selected: _tabIndex == 1, onTap: () => _selectTab(1)),
+            ],
+            const SizedBox(width: 6),
+            _TabChip(label: 'Курс', selected: _tabIndex == 2, onTap: () => _selectTab(2)),
+            const SizedBox(width: 6),
+            _TabChip(label: 'Факультет', selected: _tabIndex == 3, onTap: () => _selectTab(3)),
+            if (!isCadet) ...[
+              const SizedBox(width: 6),
+              _TabChip(label: 'Локація', selected: _tabIndex == 4, onTap: () => _selectTab(4)),
+            ],
+          ]),
+        );
+
+        return Column(
+          children: [
+            Container(
+              color: Colors.white,
+              padding: landscape
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6)
+                  : const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: landscape
+                  // Landscape: всі елементи в один горизонтальний рядок
+                  ? Row(children: [
+                      tabChips,
+                      const SizedBox(width: 12),
+                      weekNavRow,
+                      if (inputWidget != null) ...[
+                        const SizedBox(width: 12),
+                        Expanded(child: inputWidget),
+                      ],
+                    ])
+                  // Portrait: вертикальна колонка як раніше
+                  : Column(children: [
+                      tabChips,
+                      const SizedBox(height: 8),
+                      if (inputWidget != null) ...[
+                        inputWidget,
+                        const SizedBox(height: 4),
+                      ],
+                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, size: 18),
+                          onPressed: () {
+                            setState(() => _weekStart = _weekStart.subtract(const Duration(days: 7)));
+                            _fetchSchedule();
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${DateFormat('dd.MM').format(_weekStart)} – '
+                          '${DateFormat('dd.MM').format(_weekStart.add(const Duration(days: 6)))}',
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textMid),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, size: 18),
+                          onPressed: () {
+                            setState(() => _weekStart = _weekStart.add(const Duration(days: 7)));
+                            _fetchSchedule();
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ]),
+                    ]),
+            ),
+            const Divider(height: 1),
           if (_loading && _lessons.isEmpty)
             const Expanded(child: Center(child: CircularProgressIndicator()))
           else if (_error != null)
@@ -836,8 +868,9 @@ class _SchedulePageState extends ConsumerState<SchedulePage> {
                 ),
               ),
             ),
-        ],
-      ),
+          ],
+        );
+      }),
     );
   }
 }

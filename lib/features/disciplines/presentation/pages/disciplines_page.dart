@@ -184,6 +184,29 @@ class _DisciplineCard extends ConsumerStatefulWidget {
 }
 
 class _DisciplineCardState extends ConsumerState<_DisciplineCard> {
+  void _open() {
+    final discipline = widget.discipline;
+    if (widget.isCadet) {
+      final groupId = discipline.groupId;
+      final semesterId = discipline.semesterId;
+      if (groupId == null || semesterId == null) return;
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => GradeJournalPage(
+          groupId: groupId,
+          disciplineId: discipline.id.toString(),
+          semesterId: semesterId.toString(),
+          disciplineShortName: discipline.shortName,
+          groupName: 'Навчальна група',
+          readOnly: true,
+        ),
+      ));
+    } else {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => _JournalListPage(discipline: discipline),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final discipline = widget.discipline;
@@ -191,13 +214,18 @@ class _DisciplineCardState extends ConsumerState<_DisciplineCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.06),
+          color: Colors.black.withValues(alpha: 0.06),
           blurRadius: 10, offset: const Offset(0, 4),
         )],
       ),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _open,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -272,27 +300,7 @@ class _DisciplineCardState extends ConsumerState<_DisciplineCard> {
                 ),
               ),
               OutlinedButton(
-                onPressed: () {
-                  if (widget.isCadet) {
-                    final groupId = discipline.groupId;
-                    final semesterId = discipline.semesterId;
-                    if (groupId == null || semesterId == null) return;
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => GradeJournalPage(
-                        groupId: groupId,
-                        disciplineId: discipline.id.toString(),
-                        semesterId: semesterId.toString(),
-                        disciplineShortName: discipline.shortName,
-                        groupName: 'Навчальна група',
-                        readOnly: true,
-                      ),
-                    ));
-                  } else {
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => _JournalListPage(discipline: discipline),
-                    ));
-                  }
-                },
+                onPressed: _open,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppTheme.primaryDark,
                   side: const BorderSide(color: AppTheme.primaryDark),
@@ -308,6 +316,8 @@ class _DisciplineCardState extends ConsumerState<_DisciplineCard> {
             ]),
           ),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -484,17 +494,43 @@ class _JournalListPageState extends ConsumerState<_JournalListPage> {
                 }
 
                 final j = filtered[i];
+                void openJournal() => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GradeJournalPage(
+                      groupId: j.groupId != 0 ? j.groupId : null,
+                      disciplineId: j.disciplineId != 0
+                          ? j.disciplineId.toString()
+                          : widget.discipline.id.toString(),
+                      semesterId: j.semesterId != 0
+                          ? j.semesterId.toString()
+                          : null,
+                      disciplineShortName: widget.discipline.shortName,
+                      groupName: '${j.groupName} навчальна група',
+                    ),
+                  ),
+                );
+
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.border),
                     boxShadow: [BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
+                      color: Colors.black.withValues(alpha: 0.04),
                       blurRadius: 6, offset: const Offset(0, 2),
                     )],
+                  ),
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: openJournal,
+                  child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -568,24 +604,7 @@ class _JournalListPageState extends ConsumerState<_JournalListPage> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: ElevatedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => GradeJournalPage(
-                                groupId: j.groupId != 0 ? j.groupId : null,
-                                disciplineId: j.disciplineId != 0
-                                    ? j.disciplineId.toString()
-                                    : widget.discipline.id.toString(),
-                                semesterId: j.semesterId != 0
-                                    ? j.semesterId.toString()
-                                    : null,
-                                disciplineShortName:
-                                    widget.discipline.shortName,
-                                groupName:
-                                    '${j.groupName} навчальна група',
-                              ),
-                            ),
-                          ),
+                          onPressed: openJournal,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.primary,
                             foregroundColor: Colors.white,
@@ -601,6 +620,9 @@ class _JournalListPageState extends ConsumerState<_JournalListPage> {
                         ),
                       ),
                     ],
+                  ),
+                  ),
+                    ),
                   ),
                 );
               },

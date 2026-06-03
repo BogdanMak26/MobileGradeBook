@@ -353,6 +353,8 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
           path: '/marks/$existingMarkId',
           data: {},
           createdAt: DateTime.now(),
+          label: 'Видалення оцінки',
+          subtitle: '$cadetName · ${_lessonLabel(lesson)}',
         );
         if (!_network.isOnline) {
           await _queue.enqueue(op);
@@ -373,6 +375,8 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
           path: '/marks/$existingMarkId',
           data: {'markValue': value},
           createdAt: DateTime.now(),
+          label: 'Оновлення оцінки',
+          subtitle: '$cadetName · ${_lessonLabel(lesson)} · ${value.toInt()} балів',
         );
         if (!_network.isOnline) {
           await _queue.enqueue(op);
@@ -401,6 +405,8 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
             'type': 'PRACTICAL',
           },
           createdAt: DateTime.now(),
+          label: 'Виставлена оцінка',
+          subtitle: '$cadetName · ${_lessonLabel(lesson)} · ${value.toInt()} балів',
         );
         if (!_network.isOnline) {
           await _queue.enqueue(op);
@@ -426,6 +432,9 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     }
   }
 
+  String _lessonLabel(LessonModel lesson) =>
+      lesson.code.isNotEmpty ? lesson.code : 'Заняття ${lesson.id}';
+
   void _notifyGradeSaved(LessonModel lesson, double value, String cadetName) {
     final discPrefix = _disciplineName.isNotEmpty ? '$_disciplineName\n' : '';
     final lessonLabel = lesson.code.isNotEmpty ? lesson.code : 'Заняття ${lesson.id}';
@@ -445,9 +454,9 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     final journal = state.journal;
     if (journal == null) return;
 
-    final toCreate = <Map<String, dynamic>>[];          // POST /attends/batch
+    final toCreate = <Map<String, dynamic>>[];          // POST /attends
     final toUpdate = <Map<String, dynamic>>[];          // PATCH /attends/{id}
-    final toDelete = <int>[];                           // DELETE /attends/{id}
+    final toDelete = <(int, String)>[];                 // (attendId, displayLabel)
 
     for (final cadet in journal.cadets) {
       final cadetAtt = attendance[cadet.fullName];
@@ -468,22 +477,25 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
         final attendId = _attendIds[cadet.id]?[lessonId]
             ?? cadet.attendIdByLessonId[lessonId];
 
+        final lessonCodeLabel = _lessonLabel(journal.lessons[i]);
         if (currentEnum == null && attendId != null) {
-          // Record existed, user cleared it → DELETE
-          toDelete.add(attendId);
+          toDelete.add((attendId, '${cadet.fullName} · $lessonCodeLabel'));
         } else if (currentEnum != null && attendId == null) {
-          // New record → CREATE
           toCreate.add({
             'cadetId': cadet.id,
             'lessonId': lessonId,
             'teacherId': teacherId,
             'attended': currentEnum,
+            '__label': '${cadet.fullName} · $lessonCodeLabel',
           });
         } else if (currentEnum != null && attendId != null) {
-          // Record existed, user changed value → UPDATE
           final originalEnum = MilitaryLabels.attendEnum(originalCode);
           if (currentEnum != originalEnum) {
-            toUpdate.add({'attendId': attendId, 'attended': currentEnum});
+            toUpdate.add({
+              'attendId': attendId,
+              'attended': currentEnum,
+              '__label': '${cadet.fullName} · $lessonCodeLabel',
+            });
           }
         }
       }
@@ -497,22 +509,28 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
 
     if (!_network.isOnline) {
       for (final rec in toCreate) {
+        final label = rec['__label'] as String?;
+        final apiData = Map<String, dynamic>.from(rec)..remove('__label');
         await _queue.enqueue(PendingOp(
           id: 'att_new_${rec['cadetId']}_${rec['lessonId']}_${DateTime.now().millisecondsSinceEpoch}',
-          method: 'POST', path: '/attends', data: rec, createdAt: DateTime.now(),
+          method: 'POST', path: '/attends', data: apiData, createdAt: DateTime.now(),
+          label: 'Відвідуваність', subtitle: label,
         ));
       }
       for (final rec in toUpdate) {
+        final label = rec['__label'] as String?;
         await _queue.enqueue(PendingOp(
           id: 'att_upd_${rec['attendId']}_${DateTime.now().millisecondsSinceEpoch}',
           method: 'PATCH', path: '/attends/${rec['attendId']}',
           data: {'attended': rec['attended']}, createdAt: DateTime.now(),
+          label: 'Зміна відвідуваності', subtitle: label,
         ));
       }
-      for (final aId in toDelete) {
+      for (final (aId, label) in toDelete) {
         await _queue.enqueue(PendingOp(
           id: 'att_del_${aId}_${DateTime.now().millisecondsSinceEpoch}',
           method: 'DELETE', path: '/attends/$aId', data: {}, createdAt: DateTime.now(),
+          label: 'Видалення відвідуваності', subtitle: label,
         ));
       }
       state = state.copyWith(
@@ -525,12 +543,15 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
     state = state.copyWith(isSyncing: true, syncMessage: null);
     try {
       for (final rec in toCreate) {
+        final label = rec['__label'] as String?;
+        final apiData = Map<String, dynamic>.from(rec)..remove('__label');
         final op = PendingOp(
           id: 'att_new_${rec['cadetId']}_${rec['lessonId']}_${DateTime.now().millisecondsSinceEpoch}',
-          method: 'POST', path: '/attends', data: rec, createdAt: DateTime.now(),
+          method: 'POST', path: '/attends', data: apiData, createdAt: DateTime.now(),
+          label: 'Відвідуваність', subtitle: label,
         );
         try {
-          final created = await _attendsRepo.createAttend(rec);
+          final created = await _attendsRepo.createAttend(apiData);
           final aId = created['id'] as int? ?? created['attendId'] as int?;
           final cId = rec['cadetId'] as int?;
           final lId = rec['lessonId'] as int?;
@@ -543,10 +564,12 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
         }
       }
       for (final rec in toUpdate) {
+        final label = rec['__label'] as String?;
         final op = PendingOp(
           id: 'att_upd_${rec['attendId']}_${DateTime.now().millisecondsSinceEpoch}',
           method: 'PATCH', path: '/attends/${rec['attendId']}',
           data: {'attended': rec['attended']}, createdAt: DateTime.now(),
+          label: 'Зміна відвідуваності', subtitle: label,
         );
         try {
           await _attendsRepo.updateAttend(
@@ -558,10 +581,11 @@ class GradeJournalViewModel extends StateNotifier<JournalState> {
           rethrow;
         }
       }
-      for (final aId in toDelete) {
+      for (final (aId, label) in toDelete) {
         final op = PendingOp(
           id: 'att_del_${aId}_${DateTime.now().millisecondsSinceEpoch}',
           method: 'DELETE', path: '/attends/$aId', data: {}, createdAt: DateTime.now(),
+          label: 'Видалення відвідуваності', subtitle: label,
         );
         try {
           await _attendsRepo.deleteAttend(aId);

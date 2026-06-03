@@ -50,7 +50,13 @@
       "Bash(python3 *)",
       "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\" -Directory)",
       "Bash(flutter clean *)",
-      "Bash(dir *)"
+      "Bash(dir *)",
+      "Bash(iconv -f utf-8 -t utf-8)",
+      "Bash(pip install *)",
+      "Bash(flutter --version)",
+      "Bash(flutter devices *)",
+      "Bash(grep \"\\\\.dart$\")",
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\\\\lib\\\\features\" -Directory)"
     ]
   }
 }

@@ -740,11 +740,31 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
                         semLabel += ' (${j.startDate ?? '?'} - ${j.endDate ?? '?'})';
                       }
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
+                      final canOpen = jSemesterId != null && jDisciplineId != 0;
+                      void openJournal() => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => GradeJournalPage(
+                            groupId: jGroupId,
+                            disciplineId: jDisciplineId.toString(),
+                            semesterId: jSemesterId.toString(),
+                            disciplineShortName: j.disciplineName,
+                            groupName: '${widget.groupName} навчальна група',
+                          ),
+                        ),
+                      );
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Material(
+                          color: isArchived ? const Color(0xFFF9FAFB) : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: canOpen ? openJournal : null,
+                        child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: isArchived ? const Color(0xFFF9FAFB) : Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: isArchived ? const Color(0xFFE5E7EB) : AppTheme.border,
@@ -813,18 +833,7 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
                             Align(
                               alignment: Alignment.centerRight,
                               child: ElevatedButton(
-                                onPressed: (jSemesterId == null || jDisciplineId == 0) ? null : () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => GradeJournalPage(
-                                      groupId: jGroupId,
-                                      disciplineId: jDisciplineId.toString(),
-                                      semesterId: jSemesterId.toString(),
-                                      disciplineShortName: j.disciplineName,
-                                      groupName: '${widget.groupName} навчальна група',
-                                    ),
-                                  ),
-                                ),
+                                onPressed: canOpen ? openJournal : null,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: isArchived
                                       ? const Color(0xFF6B7280)
@@ -839,6 +848,9 @@ class _GroupDisciplinesPageState extends ConsumerState<GroupDisciplinesPage> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                          ),
                         ),
                       );
                     },
@@ -1248,11 +1260,31 @@ class _DisciplineJournalListPageState
                   semesterLabel += ')';
                 }
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
+                final canOpen = jGroupId != null && jSemesterId != null;
+                void openJournal() => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GradeJournalPage(
+                      groupId: jGroupId!,
+                      disciplineId: jDisciplineId.toString(),
+                      semesterId: jSemesterId!.toString(),
+                      disciplineShortName: widget.disciplineName,
+                      groupName: '${j.groupName} навчальна група',
+                    ),
+                  ),
+                );
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Material(
+                    color: isArchived ? const Color(0xFFF9FAFB) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: canOpen ? openJournal : null,
+                  child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: isArchived ? const Color(0xFFF9FAFB) : Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isArchived ? const Color(0xFFE5E7EB) : AppTheme.border,
@@ -1313,18 +1345,7 @@ class _DisciplineJournalListPageState
                       Align(
                         alignment: Alignment.centerRight,
                         child: ElevatedButton(
-                          onPressed: (jGroupId == null || jSemesterId == null) ? null : () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => GradeJournalPage(
-                                groupId: jGroupId,
-                                disciplineId: jDisciplineId.toString(),
-                                semesterId: jSemesterId.toString(),
-                                disciplineShortName: widget.disciplineName,
-                                groupName: '${j.groupName} навчальна група',
-                              ),
-                            ),
-                          ),
+                          onPressed: canOpen ? openJournal : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: isArchived
                                 ? const Color(0xFF6B7280)
@@ -1339,6 +1360,9 @@ class _DisciplineJournalListPageState
                         ),
                       ),
                     ],
+                  ),
+                  ),
+                    ),
                   ),
                 );
               },
@@ -1411,6 +1435,7 @@ class _CardTile extends StatelessWidget {
         border: Border.all(color: AppTheme.border),
       ),
       child: ListTile(
+        onTap: onTap,
         contentPadding: const EdgeInsets.all(16),
         leading: Container(
           width: 44, height: 44,

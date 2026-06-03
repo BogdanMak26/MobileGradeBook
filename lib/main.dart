@@ -28,7 +28,15 @@ void main() async {
   // Ініціалізація timezone для планованих сповіщень
   tz.initializeTimeZones();
   final timezoneInfo = await FlutterTimezone.getLocalTimezone();
-  tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
+  // "Europe/Kiev" перейменовано на "Europe/Kyiv" у IANA tzdb
+  final tzId = timezoneInfo.identifier == 'Europe/Kiev'
+      ? 'Europe/Kyiv'
+      : timezoneInfo.identifier;
+  try {
+    tz.setLocalLocation(tz.getLocation(tzId));
+  } catch (_) {
+    tz.setLocalLocation(tz.getLocation('UTC'));
+  }
 
   // Реєстрація фонових задач (workmanager)
   await BackgroundTasks.register();
