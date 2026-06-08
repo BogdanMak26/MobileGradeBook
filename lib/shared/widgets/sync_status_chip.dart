@@ -78,9 +78,10 @@ class SyncStatusChip extends ConsumerWidget {
     );
   }
 
-  void _showQueueSheet(BuildContext context, WidgetRef ref, bool isOnline) {
-    final ops = ref.read(offlineQueueProvider.notifier).getAll();
+  Future<void> _showQueueSheet(BuildContext context, WidgetRef ref, bool isOnline) async {
+    final ops = await ref.read(offlineQueueProvider.notifier).getAll();
     final syncNow = isOnline ? () => ref.read(syncServiceProvider).syncNow() : null;
+    if (!context.mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

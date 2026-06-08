@@ -13,6 +13,7 @@ import 'core/local/local_cache.dart';
 import 'core/local/offline_queue.dart';
 import 'core/notifications/fcm_service.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/platform/platform_settings.dart';
 import 'core/sync/sync_service.dart';
 import 'core/utils/app_router.dart';
 import 'shared/theme/app_theme.dart';
@@ -53,10 +54,22 @@ void main() async {
 class GradeBookApp extends ConsumerWidget {
   const GradeBookApp({super.key});
 
+  // Checked once per process lifetime — subsequent builds skip the call.
+  static bool _batteryOptChecked = false;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.read(syncServiceProvider);
     ref.read(fcmServiceProvider).initialize();
+
+    if (!_batteryOptChecked) {
+      _batteryOptChecked = true;
+      // addPostFrameCallback ensures the Flutter engine + MethodChannel is
+      // fully ready before we invoke the native battery-opt dialog.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _maybeRequestBatteryOpt(ref.read(platformSettingsProvider));
+      });
+    }
 
     final router = ref.watch(appRouterProvider);
     return MaterialApp.router(
@@ -80,5 +93,18 @@ class GradeBookApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       builder: (context, child) => ConnectivityOverlay(child: child!),
     );
+  }
+
+  static Future<void> _maybeRequestBatteryOpt(PlatformSettings platform) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      const key = 'battery_opt_prompted';
+      if (prefs.getBool(key) == true) return;
+      final isIgnoring = await platform.checkBatteryOptimization();
+      if (!isIgnoring) {
+        await prefs.setBool(key, true);
+        await platform.requestIgnoreBatteryOptimization();
+      }
+    } catch (_) {}
   }
 }

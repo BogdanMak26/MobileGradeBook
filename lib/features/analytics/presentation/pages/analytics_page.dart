@@ -1,5 +1,7 @@
 // lib/features/analytics/presentation/pages/analytics_page.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,10 +24,24 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
   String _search = '';
+  Timer? _searchDebounce;
+  final TextEditingController _searchCtrl = TextEditingController();
 
   // API data
   List<Map<String, dynamic>> _apiCadets = [];
   bool _isLoading = false;
+
+  // Pagination
+  static const int _pageSize = 30;
+  int _currentPage = 0;
+  int _totalPages = 1;
+  int _totalElements = 0;
+  bool _isSearchMode = false;
+  final ScrollController _scrollCtrl = ScrollController();
+
+  // Повний датасет для пошуку (завантажується один раз при першому пошуку)
+  List<Map<String, dynamic>> _fullDataset = [];
+  bool _fullDatasetLoaded = false;
 
   // Filter data from API
   List<Map<String, dynamic>> _allFaculties = [];
@@ -40,36 +56,35 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
   int? _selectedSemesterId;
 
   void _resetFilters() {
+    _searchDebounce?.cancel();
+    _searchCtrl.clear();
     setState(() {
       _selectedFacultyId = null;
       _selectedCourse = null;
       _selectedGroupId = null;
       _selectedSemesterId = null;
       _allSemesters = [];
+      _search = '';
+      _isSearchMode = false;
+      _fullDataset = [];
+      _fullDatasetLoaded = false;
     });
     _loadRates();
   }
 
   Future<void> _loadFilters() async {
     setState(() => _filtersLoading = true);
-    final facsRaw = await ref
-        .read(facultiesRepositoryProvider)
-        .getFaculties()
-        .catchError((_) => <dynamic>[]);
-    final groupsRaw = await ref
-        .read(groupsRepositoryProvider)
-        .getGroups()
-        .catchError((_) => <dynamic>[]);
-    final semsRaw = await ref
-        .read(semestersRepositoryProvider)
-        .getSemesters()
-        .catchError((_) => <dynamic>[]);
+    // Завантажуємо всі фільтри паралельно замість послідовно
+    final results = await Future.wait([
+      ref.read(facultiesRepositoryProvider).getFaculties().catchError((_) => <dynamic>[]),
+      ref.read(groupsRepositoryProvider).getGroups().catchError((_) => <dynamic>[]),
+      ref.read(semestersRepositoryProvider).getSemesters().catchError((_) => <dynamic>[]),
+    ]);
     if (!mounted) return;
     setState(() {
-      _allFaculties = facsRaw.whereType<Map<String, dynamic>>().toList();
-      _allGroups = groupsRaw.whereType<Map<String, dynamic>>().toList();
-      // getSemesters може повернути paginated об'єкт — витягуємо content
-      final semsList = semsRaw.isNotEmpty ? semsRaw : <dynamic>[];
+      _allFaculties = results[0].whereType<Map<String, dynamic>>().toList();
+      _allGroups    = results[1].whereType<Map<String, dynamic>>().toList();
+      final semsList = results[2].isNotEmpty ? results[2] : <dynamic>[];
       _allSemesters = semsList.whereType<Map<String, dynamic>>().toList();
       _filtersLoading = false;
     });
@@ -108,7 +123,8 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     }).toList();
   }
 
-  Future<void> _loadRates() async {
+  // Завантажити конкретну сторінку (звичайний режим без пошуку)
+  Future<void> _loadRates({int page = 0}) async {
     final auth = ref.read(authViewModelProvider);
     final isCadet = auth.role == UserRole.cadet;
     final groupId = isCadet ? auth.groupId : _selectedGroupId;
@@ -118,11 +134,22 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     final network = ref.read(networkMonitorProvider);
     final cacheKey = _ratesCacheKey(groupId, _selectedSemesterId);
 
-    // Показуємо кешовані дані одразу
-    final cachedResult = cache.get<Map<String, dynamic>>(cacheKey);
-    if (cachedResult != null) {
-      final content = cachedResult['content'] as List<dynamic>? ?? [];
-      if (mounted) setState(() => _apiCadets = _parseRatesContent(content));
+    // Кеш показуємо тільки для першої сторінки
+    if (page == 0) {
+      final cachedResult = cache.get<Map<String, dynamic>>(cacheKey);
+      if (cachedResult != null) {
+        final content = cachedResult['content'] as List<dynamic>? ?? [];
+        final total = (cachedResult['totalElements'] as num?)?.toInt() ?? content.length;
+        if (mounted) {
+          setState(() {
+            _apiCadets = _parseRatesContent(content);
+            _currentPage = 0;
+            _totalElements = total;
+            _totalPages = (total / _pageSize).ceil().clamp(1, 9999);
+            _isSearchMode = false;
+          });
+        }
+      }
     }
 
     if (!network.isOnline) {
@@ -130,19 +157,81 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
       return;
     }
 
-    // Показуємо спінер тільки якщо немає даних для відображення
-    setState(() => _isLoading = _apiCadets.isEmpty);
+    if (mounted) setState(() => _isLoading = true);
+
     try {
       final result = await ref.read(ratesRepositoryProvider).getRates(
+        page: page,
+        size: _pageSize,
         groupId: groupId,
         semesterId: _selectedSemesterId,
-        size: 5000,
       );
-      await cache.set(cacheKey, result);
+      if (page == 0) await cache.set(cacheKey, result);
       final content = result['content'] as List<dynamic>? ?? [];
-      if (mounted) setState(() { _apiCadets = _parseRatesContent(content); _isLoading = false; });
+      final total = (result['totalElements'] as num?)?.toInt() ?? content.length;
+      if (mounted) {
+        setState(() {
+          _apiCadets = _parseRatesContent(content);
+          _currentPage = page;
+          _totalElements = total;
+          _totalPages = (total / _pageSize).ceil().clamp(1, 9999);
+          _isSearchMode = false;
+          _isLoading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Пошук по всіх даних: завантажує повний датасет один раз, потім фільтрує на клієнті
+  Future<void> _searchRates(String query) async {
+    final auth = ref.read(authViewModelProvider);
+    final isCadet = auth.role == UserRole.cadet;
+    final groupId = isCadet ? auth.groupId : _selectedGroupId;
+    if (isCadet && groupId == null) return;
+
+    // Якщо повний датасет ще не завантажений — завантажуємо
+    if (!_fullDatasetLoaded) {
+      if (!ref.read(networkMonitorProvider).isOnline) {
+        // Офлайн: шукаємо тільки по тому що вже є в _apiCadets
+        _applyClientSearch(query, _apiCadets);
+        return;
+      }
+      if (mounted) setState(() => _isLoading = true);
+      try {
+        final result = await ref.read(ratesRepositoryProvider).getRates(
+          page: 0,
+          size: 3000,
+          groupId: groupId,
+          semesterId: _selectedSemesterId,
+        );
+        final content = result['content'] as List<dynamic>? ?? [];
+        _fullDataset = _parseRatesContent(content);
+        _fullDatasetLoaded = true;
+      } catch (_) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+    }
+
+    _applyClientSearch(query, _fullDataset);
+  }
+
+  void _applyClientSearch(String query, List<Map<String, dynamic>> source) {
+    final q = query.toLowerCase();
+    final results = source
+        .where((c) => c['name'].toString().toLowerCase().contains(q))
+        .toList();
+    if (mounted) {
+      setState(() {
+        _apiCadets = results;
+        _totalElements = results.length;
+        _totalPages = 1;
+        _currentPage = 0;
+        _isSearchMode = true;
+        _isLoading = false;
+      });
     }
   }
 
@@ -158,7 +247,13 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
   }
 
   @override
-  void dispose() { _tab.dispose(); super.dispose(); }
+  void dispose() {
+    _tab.dispose();
+    _scrollCtrl.dispose();
+    _searchCtrl.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
 
   void _showDetails(BuildContext context, Map<String, dynamic> cadet, int rank) {
     showDialog(
@@ -174,8 +269,6 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
     final isCadet = role == UserRole.cadet;
     final fullName = auth.fullName ?? auth.email ?? 'Користувач';
 
-    final visibleCadets = _apiCadets;
-
     // Групи тільки коли обраний факультет; фільтр по курсу якщо обраний
     final filteredGroups = _selectedFacultyId == null
         ? <Map<String, dynamic>>[]
@@ -187,28 +280,6 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
             return fId == _selectedFacultyId &&
                 (_selectedCourse == null || courseNum == _selectedCourse);
           }).toList();
-
-    // Набір назв груп для client-side фільтрації (факультет + курс)
-    // Використовується тільки коли _allGroups завантажені і група не обрана
-    Set<String>? targetGroupNames;
-    if (_selectedGroupId == null &&
-        _allGroups.isNotEmpty &&
-        (_selectedFacultyId != null || _selectedCourse != null)) {
-      targetGroupNames = filteredGroups
-          .map((g) => (g['name'] as String?) ?? '')
-          .where((n) => n.isNotEmpty)
-          .toSet();
-    }
-
-    final filtered = visibleCadets.where((c) {
-      final matchSearch = c['name']
-          .toString()
-          .toLowerCase()
-          .contains(_search.toLowerCase());
-      final matchGroups = targetGroupNames == null ||
-          targetGroupNames.contains(c['group']);
-      return matchSearch && matchGroups;
-    }).toList();
 
     final roleIcon = _roleIcon(role);
     final roleColor = _roleColor(role);
@@ -245,6 +316,7 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
       body: RefreshIndicator(
         onRefresh: _loadRates,
         child: CustomScrollView(
+        controller: _scrollCtrl,
         slivers: [
           // ── Заголовок ─────────────────────────────────────────────────
           SliverToBoxAdapter(
@@ -327,12 +399,18 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
                     _selectedGroupId = id;
                     _selectedSemesterId = null;
                     _allSemesters = [];
+                    _fullDataset = [];
+                    _fullDatasetLoaded = false;
                   });
                   if (id != null) _loadSemestersForGroup(id);
                   _loadRates();
                 },
                 onSemesterChanged: (id) {
-                  setState(() => _selectedSemesterId = id);
+                  setState(() {
+                    _selectedSemesterId = id;
+                    _fullDataset = [];
+                    _fullDatasetLoaded = false;
+                  });
                   _loadRates();
                 },
                 onReset: _resetFilters,
@@ -378,12 +456,38 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
                   const SizedBox(height: 16),
                   if (_tab.index == 0) ...[
                     TextField(
-                      onChanged: (v) => setState(() => _search = v),
-                      decoration: const InputDecoration(
-                        hintText: 'Пошук за прізвищем',
-                        prefixIcon: Icon(Icons.search,
+                      controller: _searchCtrl,
+                      onChanged: (v) {
+                        _searchDebounce?.cancel();
+                        setState(() => _search = v);
+                        if (v.trim().isEmpty) {
+                          _loadRates();
+                        } else {
+                          _searchDebounce = Timer(
+                            const Duration(milliseconds: 400),
+                            () { if (mounted) _searchRates(v.trim()); },
+                          );
+                        }
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'Пошук за прізвищем (по всіх сторінках)',
+                        prefixIcon: const Icon(Icons.search,
                             color: AppTheme.textMid, size: 18),
-                        contentPadding: EdgeInsets.symmetric(
+                        suffixIcon: _search.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: () {
+                                  _searchDebounce?.cancel();
+                                  _searchCtrl.clear();
+                                  setState(() {
+                                    _search = '';
+                                    _isSearchMode = false;
+                                  });
+                                  _loadRates();
+                                },
+                              )
+                            : null,
+                        contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
                       ),
                     ),
@@ -410,9 +514,12 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
                       ),
                       const SizedBox(height: 12),
                     ],
-                    Text('Знайдено записів: ${filtered.length}',
-                        style: const TextStyle(
-                            color: AppTheme.textMid, fontSize: 13)),
+                    Text(
+                      _isSearchMode
+                          ? 'Знайдено: ${_apiCadets.length} з $_totalElements'
+                          : 'Всього: $_totalElements | Сторінка ${_currentPage + 1} з $_totalPages',
+                      style: const TextStyle(color: AppTheme.textMid, fontSize: 13),
+                    ),
                   ],
                 ],
               ),
@@ -421,54 +528,114 @@ class _AnalyticsPageState extends ConsumerState<AnalyticsPage>
           const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
           // ── Рейтинг або Статистика ─────────────────────────────────
-          SliverToBoxAdapter(
-            child: _tab.index == 0
-                ? _isLoading
-                    ? const Padding(
-                        padding: EdgeInsets.all(40),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : _apiCadets.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.all(40),
-                            child: Center(
-                              child: Text('Немає даних',
-                                  style: TextStyle(color: AppTheme.textMid)),
-                            ),
-                          )
-                        : Column(
-                            children: [
-                              ...List.generate(filtered.length, (i) {
-                                final cadet = filtered[i];
-                                final rank = visibleCadets.indexOf(cadet) + 1;
-                                return Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                                  child: _CadetRankCard(
-                                    cadet: cadet,
-                                    rank: rank,
-                                    onTap: () =>
-                                        _showDetails(context, cadet, rank),
-                                  ),
-                                );
-                              }),
-                              const SizedBox(height: 24),
-                            ],
-                          )
-                : _isLoading
-                    ? const Padding(
-                        padding: EdgeInsets.all(40),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : _apiCadets.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.all(40),
-                            child: Center(
-                              child: Text('Немає даних',
-                                  style: TextStyle(color: AppTheme.textMid)),
-                            ),
-                          )
-                        : _StatisticsTab(cadets: visibleCadets),
-          ),
+          if (_tab.index == 0) ...[
+            if (_isLoading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              )
+            else if (_apiCadets.isEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: Center(
+                    child: Text('Немає даних',
+                        style: TextStyle(color: AppTheme.textMid)),
+                  ),
+                ),
+              )
+            else ...[
+              SliverList.builder(
+                itemCount: _apiCadets.length,
+                itemBuilder: (ctx, i) {
+                  final cadet = _apiCadets[i];
+                  // Глобальна позиція в рейтингу = зміщення поточної сторінки + позиція в ній
+                  final rank = _isSearchMode
+                      ? i + 1
+                      : _currentPage * _pageSize + i + 1;
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: _CadetRankCard(
+                      cadet: cadet,
+                      rank: rank,
+                      onTap: () => _showDetails(context, cadet, rank),
+                    ),
+                  );
+                },
+              ),
+              // Навігація між сторінками (приховуємо в режимі пошуку)
+              if (!_isSearchMode && _totalPages > 1)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          onPressed: _currentPage > 0
+                              ? () {
+                                  _scrollCtrl.jumpTo(0);
+                                  _loadRates(page: _currentPage - 1);
+                                }
+                              : null,
+                          icon: const Icon(Icons.chevron_left),
+                          style: IconButton.styleFrom(
+                            backgroundColor: _currentPage > 0
+                                ? AppTheme.primary.withAlpha(20)
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_currentPage + 1} / $_totalPages',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 15),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _currentPage < _totalPages - 1
+                              ? () {
+                                  _scrollCtrl.jumpTo(0);
+                                  _loadRates(page: _currentPage + 1);
+                                }
+                              : null,
+                          icon: const Icon(Icons.chevron_right),
+                          style: IconButton.styleFrom(
+                            backgroundColor: _currentPage < _totalPages - 1
+                                ? AppTheme.primary.withAlpha(20)
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
+          ] else ...[
+            if (_isLoading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              )
+            else if (_apiCadets.isEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: Center(
+                    child: Text('Немає даних',
+                        style: TextStyle(color: AppTheme.textMid)),
+                  ),
+                ),
+              )
+            else
+              SliverToBoxAdapter(child: _StatisticsTab(cadets: _apiCadets)),
+          ],
         ],
       ),
       ),

@@ -43,28 +43,51 @@ class BiometricService {
     }
   }
 
+  /// Primary auth — lets Android show whatever is available on the device:
+  /// face recognition, fingerprint, or device PIN/pattern as fallback.
+  /// sensitiveTransaction: false includes Class 2 biometrics (e.g. face on tablets).
   Future<BiometricResult> authenticate(String reason) async {
     try {
       final success = await _auth.authenticate(
         localizedReason: reason,
         options: const AuthenticationOptions(
           stickyAuth: true,
-          biometricOnly: false, // allow device PIN/password fallback
+          biometricOnly: false,
+          sensitiveTransaction: false,
         ),
       );
       return success ? BiometricResult.success : BiometricResult.failed;
     } on PlatformException catch (e) {
-      return switch (e.code) {
-        'NotAvailable'          => BiometricResult.notAvailable,
-        'NotEnrolled'           => BiometricResult.notEnrolled,
-        'LockedOut'             => BiometricResult.lockedOut,
-        'PermanentlyLockedOut'  => BiometricResult.lockedOut,
-        'UserCancel'            => BiometricResult.cancelled,
-        'systemCancel'          => BiometricResult.cancelled,
-        _                       => BiometricResult.failed,
-      };
+      return _mapCode(e.code);
     }
   }
+
+  /// Credential-only auth via local_auth — used as fallback on Android < 11.
+  Future<BiometricResult> authenticateWithCredential(String reason) async {
+    try {
+      final success = await _auth.authenticate(
+        localizedReason: reason,
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: false,
+          sensitiveTransaction: false,
+        ),
+      );
+      return success ? BiometricResult.success : BiometricResult.failed;
+    } on PlatformException catch (e) {
+      return _mapCode(e.code);
+    }
+  }
+
+  BiometricResult _mapCode(String code) => switch (code) {
+    'NotAvailable'         => BiometricResult.notAvailable,
+    'NotEnrolled'          => BiometricResult.notEnrolled,
+    'LockedOut'            => BiometricResult.lockedOut,
+    'PermanentlyLockedOut' => BiometricResult.lockedOut,
+    'UserCancel'           => BiometricResult.cancelled,
+    'systemCancel'         => BiometricResult.cancelled,
+    _                      => BiometricResult.failed,
+  };
 }
 
 final biometricServiceProvider =

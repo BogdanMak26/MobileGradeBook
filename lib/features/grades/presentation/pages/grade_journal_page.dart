@@ -295,16 +295,28 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
         children: [
           Column(
             children: [
-              if (MediaQuery.of(context).orientation == Orientation.portrait)
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: const Row(children: [SyncStatusChip()]),
-                ),
+              Builder(builder: (ctx) {
+                final mq = MediaQuery.of(ctx);
+                final isPortrait = mq.orientation == Orientation.portrait;
+                final isTablet   = mq.size.shortestSide >= 600;
+                // Show sync chip in portrait OR on tablet (enough space)
+                if (isPortrait || isTablet)
+                  return Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    child: const Row(children: [SyncStatusChip()]),
+                  );
+                return const SizedBox.shrink();
+              }),
               Container(
                 color: Colors.white,
                 child: Builder(builder: (ctx) {
-                  final landscape = MediaQuery.of(ctx).orientation == Orientation.landscape;
+                  final mq = MediaQuery.of(ctx);
+                  final landscape = mq.orientation == Orientation.landscape;
+                  final isTablet  = mq.size.shortestSide >= 600;
+                  // Phone-landscape: icon-only tabs to save vertical space.
+                  // Tablet or portrait: icon + label tabs.
+                  final phoneOnly = landscape && !isTablet;
                   return TabBar(
                     controller: _tab,
                     indicatorColor: AppTheme.primary,
@@ -312,11 +324,11 @@ class _GradeJournalPageState extends ConsumerState<GradeJournalPage>
                     unselectedLabelColor: AppTheme.textMid,
                     labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
                     unselectedLabelStyle: const TextStyle(fontSize: 10),
-                    tabs: landscape
+                    tabs: phoneOnly
                         ? const [
-                            Tab(icon: Icon(Icons.bar_chart, size: 18)),
-                            Tab(icon: Icon(Icons.menu_book_outlined, size: 18)),
-                            Tab(icon: Icon(Icons.link, size: 18)),
+                            Tab(height: 36, icon: Icon(Icons.bar_chart, size: 18)),
+                            Tab(height: 36, icon: Icon(Icons.menu_book_outlined, size: 18)),
+                            Tab(height: 36, icon: Icon(Icons.link, size: 18)),
                           ]
                         : const [
                             _TabItem(icon: Icons.bar_chart, label: 'Журнал'),
@@ -699,18 +711,31 @@ class _GradesTabState extends State<_GradesTab> {
   final _vertRight = ScrollController(); // right list vertical
   bool _syncing = false;
 
-  // Layout constants
-  static const double _attW   = 36.0;
-  static const double _scoreW = 46.0;
-  static const double _fixedW = 180.0;
+  // Compact mode applies ONLY to phones in landscape.
+  // Tablets (shortestSide >= 600) always use full-size layout.
+  bool get _landscape => MediaQuery.of(context).orientation == Orientation.landscape;
+  bool get _isTablet  => MediaQuery.of(context).size.shortestSide >= 600;
+  bool get _compact   => _landscape && !_isTablet;
 
-  // Adaptive heights: компактніші у landscape щоб всі рядки вмістились
-  bool get _compact => MediaQuery.of(context).orientation == Orientation.landscape;
-  double get _headH   => _compact ? 20.0 : 36.0;
-  double get _dateH   => _compact ? 13.0 : 22.0;
-  double get _subH    => _compact ? 10.0 : 18.0;
-  double get _rowH    => _compact ? 30.0 : 42.0;
+  // Adaptive cell widths — wider on tablet for comfortable touch targets
+  double get _attW    => _isTablet ? 52.0 : 36.0;
+  double get _scoreW  => _isTablet ? 64.0 : 46.0;
+  double get _numW    => _isTablet ? 32.0 : 28.0;  // № column
+  double get _badgeW  => _isTablet ? 68.0 : 52.0;  // Бали badge column
+  double get _fixedW  => _isTablet ? (_landscape ? 264.0 : 220.0) : 180.0;
+
+  // Row/header heights — tablet landscape uses same comfortable sizes as portrait
+  double get _headH   => _compact ? 22.0 : 36.0;
+  double get _dateH   => _compact ? 14.0 : 22.0;
+  double get _subH    => _compact ? 12.0 : 18.0;
+  double get _rowH    => _compact ? 32.0 : 44.0;
   double get _footerH => _compact ?  0.0 : 28.0;
+
+  // Larger fonts on tablet for readability
+  double get _dateFontSize  => _isTablet ? 10.0 :  9.0;
+  double get _subFontSize   => _isTablet ? 11.0 :  9.0;
+  double get _attFontSize   => _isTablet ? 13.0 : 11.0;
+  double get _scoreFontSize => _isTablet ? 14.0 : 13.0;
 
   double _lessonW(Map<String, dynamic> l) =>
       (l['maxScore'] as double?) != null ? _attW + _scoreW : _attW;
@@ -1026,23 +1051,23 @@ class _GradesTabState extends State<_GradesTab> {
                       right: BorderSide(color: Color(0xFFE2E8F0), width: 2),
                     ),
                   ),
-                  child: const Row(children: [
+                  child: Row(children: [
                     SizedBox(
-                      width: 28,
+                      width: _numW,
                       child: Center(child: Text('№',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMid))),
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMid))),
                     ),
                     Expanded(
                       child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
                         child: Text('ПІБ',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMid)),
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMid)),
                       ),
                     ),
                     SizedBox(
-                      width: 52,
+                      width: _badgeW,
                       child: Center(child: Text('Бали',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMid))),
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMid))),
                     ),
                   ]),
                 ),
@@ -1072,7 +1097,7 @@ class _GradesTabState extends State<_GradesTab> {
                         ),
                         child: Row(children: [
                           SizedBox(
-                            width: 28,
+                            width: _numW,
                             child: Center(child: Text('${i + 1}',
                                 style: const TextStyle(fontSize: 11, color: AppTheme.textLight, fontWeight: FontWeight.w600))),
                           ),
@@ -1107,12 +1132,16 @@ class _GradesTabState extends State<_GradesTab> {
                               }),
                             ),
                           ),
+                          // Score badge — adaptive width, tighter padding on tablet
                           SizedBox(
-                            width: 52,
+                            width: _badgeW,
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: _isTablet ? 5 : 8,
+                              ),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: _totalBg(pct),
                                   borderRadius: BorderRadius.circular(6),
@@ -1120,10 +1149,14 @@ class _GradesTabState extends State<_GradesTab> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    '${total.toStringAsFixed(1)}\n${pct.toInt()}%',
+                                    '${_fmtScore(total)}\n${pct.toInt()}%',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, height: 1.3,
-                                        color: _totalColor(pct)),
+                                    style: TextStyle(
+                                      fontSize: _isTablet ? 10.0 : 9.0,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.35,
+                                      color: _totalColor(pct),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1145,7 +1178,7 @@ class _GradesTabState extends State<_GradesTab> {
                     ),
                   ),
                   child: Row(children: [
-                    const SizedBox(width: 28),
+                    SizedBox(width: _numW),
                     const Expanded(
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 6),
@@ -1154,7 +1187,7 @@ class _GradesTabState extends State<_GradesTab> {
                       ),
                     ),
                     SizedBox(
-                      width: 52,
+                      width: _badgeW,
                       child: Center(
                         child: Text(
                           _effectiveMaxScore == _effectiveMaxScore.truncateToDouble()
@@ -1200,7 +1233,7 @@ class _GradesTabState extends State<_GradesTab> {
                             ),
                             child: Center(
                               child: Text(_fmtDate(l['date'] as String),
-                                  style: const TextStyle(fontSize: 9, color: AppTheme.textMid)),
+                                  style: TextStyle(fontSize: _dateFontSize, color: AppTheme.textMid)),
                             ),
                           );
                         }).toList(),
@@ -1224,7 +1257,7 @@ class _GradesTabState extends State<_GradesTab> {
                                 ),
                               ),
                               child: Center(child: Text('Пр',
-                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: fg))),
+                                  style: TextStyle(fontSize: _subFontSize, fontWeight: FontWeight.w600, color: fg))),
                             );
                           }
                           return Row(children: [
@@ -1238,7 +1271,7 @@ class _GradesTabState extends State<_GradesTab> {
                                 ),
                               ),
                               child: Center(child: Text('Пр',
-                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: fg))),
+                                  style: TextStyle(fontSize: _subFontSize, fontWeight: FontWeight.w600, color: fg))),
                             ),
                             Container(
                               width: _scoreW,
@@ -1250,7 +1283,7 @@ class _GradesTabState extends State<_GradesTab> {
                                 ),
                               ),
                               child: Center(child: Text('Бал',
-                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: fg))),
+                                  style: TextStyle(fontSize: _subFontSize, fontWeight: FontWeight.w600, color: fg))),
                             ),
                           ]);
                         }).toList(),
@@ -1300,7 +1333,7 @@ class _GradesTabState extends State<_GradesTab> {
                                     ? const SizedBox.shrink()
                                     : Center(
                                         child: Text(attText,
-                                            style: TextStyle(fontSize: 11,
+                                            style: TextStyle(fontSize: _attFontSize,
                                                 fontWeight: FontWeight.w700, color: attFg)),
                                       ),
                               );
@@ -1332,7 +1365,7 @@ class _GradesTabState extends State<_GradesTab> {
                                 child: Center(
                                   child: score != null
                                       ? Text(_fmtScore(score),
-                                          style: TextStyle(fontSize: 13,
+                                          style: TextStyle(fontSize: _scoreFontSize,
                                               fontWeight: FontWeight.w600, color: scoreFg))
                                       : const SizedBox.shrink(),
                                 ),
@@ -1728,7 +1761,17 @@ class _TabItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tab(icon: Icon(icon, size: 16), text: label, iconMargin: const EdgeInsets.only(bottom: 2));
+    return Tab(
+      height: 36,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14),
+          const SizedBox(width: 5),
+          Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
   }
 }
 

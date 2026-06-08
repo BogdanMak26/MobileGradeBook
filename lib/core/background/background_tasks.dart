@@ -22,18 +22,24 @@ const kUnfilledJournalsFlag = 'bg_has_unfilled_journals';
 @pragma('vm:entry-point')
 void backgroundCallbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
+    WidgetsFlutterBinding.ensureInitialized();
     try {
-      WidgetsFlutterBinding.ensureInitialized();
       switch (taskName) {
         case _kGradesCheckTask:
           await _runGradesCheck();
+          return true;
         case _kJournalsReminderTask:
           await _runJournalsReminder();
+          return true;
         case _kOfflineSyncTask:
-          await _runOfflineSync();
+          // Return false → WorkManager retries with backoff if sync fails
+          return await _runOfflineSync();
       }
-    } catch (_) {}
-    return true;
+      return true;
+    } catch (_) {
+      // Unexpected error → retry later
+      return false;
+    }
   });
 }
 
@@ -109,8 +115,12 @@ Future<void> _runGradesCheck() async {
     baseUrl: AppConstants.baseUrl,
     connectTimeout: const Duration(seconds: 20),
     receiveTimeout: const Duration(seconds: 20),
+    headers: {
+      'CF-Access-Client-Id':     AppConstants.cfClientId,
+      'CF-Access-Client-Secret': AppConstants.cfClientSecret,
+      'Authorization':           'Bearer $token',
+    },
   ));
-  dio.options.headers['Authorization'] = 'Bearer $token';
 
   // 1. Отримуємо список журналів групи (з назвою дисципліни)
   final journalsResp = await dio.get('/journals', queryParameters: {'groupId': groupId});
@@ -229,28 +239,37 @@ Future<void> _runJournalsReminder() async {
 
 // ── Фонова синхронізація офлайн-черги ─────────────────────────────────────────
 
-Future<void> _runOfflineSync() async {
+// Returns true = all done (nothing left or all sent), false = retry needed.
+Future<bool> _runOfflineSync() async {
   final prefs = await SharedPreferences.getInstance();
   final raw = prefs.getString('offline_queue');
-  if (raw == null || raw.isEmpty) return;
+  if (raw == null || raw.isEmpty) return true;
 
   final token = await _getValidToken();
-  if (token == null) return;
+  // No valid token → retry later
+  if (token == null) return false;
 
   List<dynamic> ops;
   try {
     ops = jsonDecode(raw) as List<dynamic>;
   } catch (_) {
-    return;
+    // Corrupted queue — clear it so we don't loop forever
+    await prefs.remove('offline_queue');
+    return true;
   }
-  if (ops.isEmpty) return;
+  if (ops.isEmpty) return true;
 
   final dio = Dio(BaseOptions(
     baseUrl: AppConstants.baseUrl,
     connectTimeout: const Duration(seconds: 20),
     receiveTimeout: const Duration(seconds: 20),
+    headers: {
+      // Cloudflare Access service token — without these all requests return 403
+      'CF-Access-Client-Id':     AppConstants.cfClientId,
+      'CF-Access-Client-Secret': AppConstants.cfClientSecret,
+      'Authorization':           'Bearer $token',
+    },
   ));
-  dio.options.headers['Authorization'] = 'Bearer $token';
 
   final remaining = <dynamic>[];
   for (final opJson in ops) {
@@ -276,6 +295,9 @@ Future<void> _runOfflineSync() async {
   } else {
     await prefs.setString('offline_queue', jsonEncode(remaining));
   }
+
+  // If some ops still remain → tell WorkManager to retry with backoff
+  return remaining.isEmpty;
 }
 
 // ── Публічний клас для реєстрації задач ───────────────────────────────────────

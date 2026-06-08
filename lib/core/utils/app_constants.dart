@@ -5,11 +5,17 @@ class AppConstants {
 
   // ── Server ────────────────────────────────────────────────────────────────
   static const String baseUrl = 'https://gradebook.viti.edu.ua/api';
+
+  // Cloudflare Access service-token headers — required on every HTTP request.
+  static const String cfClientId =
+      '3041217c4cb0104098b18aaa97a5b476.access';
+  static const String cfClientSecret =
+      'fcd30b8531a9a0c1099e04ed8a3d0b3bc00be9fed51066d49e414d5afc749aa9';
   static const String authUrl = 'https://auth.viti.edu.ua';
   static const String keycloakRealm = 'grade-book';
   static const String keycloakClientId = 'grade-book-client-web';
   static const String keycloakRedirectUri = 'com.viti.gradebook://callback';
-  static const String keycloakClientSecret = 'СЮДИ_ВСТАВИТИ_SECRET';
+  // Public OIDC client — client_secret не використовується (PKCE замість нього)
 
   // ── Keycloak OIDC endpoints ───────────────────────────────────────────────
   static const String issuerUrl = '$authUrl/realms/$keycloakRealm';

@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <queries>
         <intent>
@@ -60,6 +61,23 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="gradebook_channel" />
+
+        <!-- AlarmManager-based offline sync (reliable on OEM Android) -->
+        <receiver
+            android:name=".OfflineSyncReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="com.viti.gradebook.OFFLINE_SYNC_ALARM"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- JobScheduler-based offline sync: fires as soon as network returns,
+             even with app killed; setPersisted=true re-registers after reboot -->
+        <service
+            android:name=".OfflineSyncJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
 
         <!-- WorkManager service -->
         <service

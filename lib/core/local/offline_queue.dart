@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import '../platform/platform_settings.dart';
 
 class PendingOp {
   final String id;
@@ -52,7 +53,14 @@ class OfflineQueueNotifier extends StateNotifier<int> {
     state = _loadOps().length;
   }
 
-  List<PendingOp> getAll() => _loadOps();
+  Future<List<PendingOp>> getAll() async {
+    // Force a disk re-read — the WorkManager background isolate may have
+    // modified SharedPreferences while the Flutter engine was suspended.
+    await _prefs.reload();
+    final ops = _loadOps();
+    if (state != ops.length) state = ops.length;
+    return ops;
+  }
 
   Future<void> enqueue(PendingOp op) async {
     final ops = _loadOps()..add(op);
@@ -64,21 +72,25 @@ class OfflineQueueNotifier extends StateNotifier<int> {
       'offlineSyncPending',
       'com.viti.gradebook.offlineSync',
       constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: ExistingWorkPolicy.keep,
       backoffPolicy: BackoffPolicy.linear,
       backoffPolicyDelay: const Duration(minutes: 1),
     );
+    // Native AlarmManager alarm — fires even when WorkManager is throttled by OEM
+    await PlatformSettings.scheduleOfflineSyncAlarm();
   }
 
   Future<void> remove(String id) async {
     final ops = _loadOps().where((o) => o.id != id).toList();
     await _saveOps(ops);
     state = ops.length;
+    if (ops.isEmpty) await PlatformSettings.cancelOfflineSyncAlarm();
   }
 
   Future<void> clear() async {
     await _prefs.remove(_key);
     state = 0;
+    await PlatformSettings.cancelOfflineSyncAlarm();
   }
 
   List<PendingOp> _loadOps() {

@@ -56,7 +56,11 @@
       "Bash(flutter --version)",
       "Bash(flutter devices *)",
       "Bash(grep \"\\\\.dart$\")",
-      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\\\\lib\\\\features\" -Directory)"
+      "Bash(Get-ChildItem -Path \"K:\\\\Diplom\\\\gradebook_mobile\\\\lib\\\\features\" -Directory)",
+      "PowerShell(Get-ChildItem -Path . -Recurse -Force -ErrorAction SilentlyContinue | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\('K:\\\\Diplom\\\\gradebook_mobile\\\\', ''\\) } | Sort-Object | Select-Object -First 300)",
+      "Bash(Out-File -Encoding utf8 \"K:\\\\Diplom\\\\gradebook_mobile\\\\docs\\\\brand_text.txt\")",
+      "Bash(Get-Content \"K:\\\\Diplom\\\\gradebook_mobile\\\\docs\\\\brand_text.txt\" -Encoding utf8)",
+      "Bash(Get-ChildItem *)"
     ]
   }
 }

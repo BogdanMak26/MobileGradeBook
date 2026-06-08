@@ -20,6 +20,7 @@ import '../../features/admin/presentation/pages/admin_page.dart';
 import '../../features/notifications/presentation/pages/notifications_settings_page.dart';
 import '../../features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../features/auth/presentation/pages/lock_page.dart';
+import '../../features/auth/presentation/pages/security_setup_page.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../core/utils/app_constants.dart';
 
@@ -52,7 +53,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return loc == '/lock' ? null : '/lock';
       }
       if (status == AuthStatus.authenticated) {
-        if (loc == '/login' || loc == '/lock') return '/dashboard';
+        if (notifier.needsSecurityPrompt) {
+          return loc == '/security-setup' ? null : '/security-setup';
+        }
+        if (loc == '/login' || loc == '/lock' || loc == '/security-setup') {
+          return '/dashboard';
+        }
         return null;
       }
       // unauthenticated or error
@@ -62,7 +68,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
       GoRoute(path: '/login',  builder: (_, __) => const LoginPage()),
-      GoRoute(path: '/lock',   builder: (_, __) => const LockPage()),
+      GoRoute(path: '/lock',           builder: (_, __) => const LockPage()),
+      GoRoute(path: '/security-setup', builder: (_, __) => const SecuritySetupPage()),
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsSettingsPage()),
       ShellRoute(
         builder: (_, __, child) => MainShell(child: child),
@@ -93,19 +100,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
 class _AuthRouterNotifier extends ChangeNotifier {
   AuthStatus _authStatus;
+  bool _needsSecurityPrompt;
   late final VoidCallback _cancel;
 
   _AuthRouterNotifier(Ref ref)
-      : _authStatus = ref.read(authViewModelProvider).status {
+      : _authStatus = ref.read(authViewModelProvider).status,
+        _needsSecurityPrompt = ref.read(authViewModelProvider).needsSecurityPrompt {
     _cancel = ref.listen<AuthState>(authViewModelProvider, (prev, next) {
-      if (prev?.status != next.status) {
+      if (prev?.status != next.status ||
+          prev?.needsSecurityPrompt != next.needsSecurityPrompt) {
         _authStatus = next.status;
+        _needsSecurityPrompt = next.needsSecurityPrompt;
         notifyListeners();
       }
     }).close;
   }
 
   AuthStatus get authStatus => _authStatus;
+  bool get needsSecurityPrompt => _needsSecurityPrompt;
   bool get isAuthenticated => _authStatus == AuthStatus.authenticated;
 
   @override

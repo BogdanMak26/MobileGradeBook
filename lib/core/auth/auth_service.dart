@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../utils/app_constants.dart';
@@ -210,8 +211,7 @@ class AuthService {
     required String code,
     required String codeVerifier,
   }) async {
-    print('TOKEN REQUEST PKCE:');
-    print('code_verifier: $codeVerifier');
+    if (kDebugMode) print('[AUTH] TOKEN REQUEST PKCE');
 
     try {
       final response = await _dio.post(
@@ -229,7 +229,7 @@ class AuthService {
         ),
       );
 
-      print('RESPONSE TYPE: ${response.data.runtimeType}');
+      if (kDebugMode) print('[AUTH] PKCE response type: ${response.data.runtimeType}');
 
       final rawData = response.data;
       final Map<String, dynamic> data;
@@ -240,15 +240,11 @@ class AuthService {
       } else {
         data = Map<String, dynamic>.from(rawData as Map);
       }
-      print('DATA KEYS: ${data.keys.toList()}');
-      print('expires_in type: ${data['expires_in'].runtimeType}');
-      print('access_token type: ${data['access_token'].runtimeType}');
       final tokens = TokenModel.fromJson(data);
       await saveTokens(tokens);
       return tokens;
     } on DioException catch (e) {
-      print('PKCE ERROR STATUS: ${e.response?.statusCode}');
-      print('PKCE ERROR BODY: ${e.response?.data}');
+      if (kDebugMode) print('[AUTH] PKCE error: ${e.response?.statusCode}');
       rethrow;
     }
   }
@@ -298,7 +294,7 @@ class AuthService {
       }
       return KeycloakUser.fromUserInfo(data);
     } catch (e) {
-      print('getUserInfo error: $e');
+      if (kDebugMode) print('[AUTH] getUserInfo error: $e');
       return null;
     }
   }
@@ -308,11 +304,7 @@ class AuthService {
   Future<TokenModel> exchangeCodeForTokensNoVerifier({
     required String code,
   }) async {
-    print('=== TOKEN REQUEST ===');
-    print('URL: ${AppConstants.tokenEndpoint}');
-    print('client_id: ${AppConstants.keycloakClientId}');
-    print('redirect_uri: ${AppConstants.keycloakRedirectUri}');
-    print('code: $code');
+    if (kDebugMode) print('[AUTH] Token request (no verifier)');
 
     try {
       final response = await _dio.post(
@@ -329,7 +321,6 @@ class AuthService {
         ),
       );
 
-      print('RESPONSE: ${response.data}');
 
       final data = response.data is String
           ? jsonDecode(response.data as String) as Map<String, dynamic>
@@ -339,10 +330,7 @@ class AuthService {
       await saveTokens(tokens);
       return tokens;
     } on DioException catch (e) {
-      print('=== TOKEN ERROR ===');
-      print('STATUS: ${e.response?.statusCode}');
-      print('BODY: ${e.response?.data}');
-      print('REQUEST: ${e.requestOptions.data}');
+      if (kDebugMode) print('[AUTH] Token error: ${e.response?.statusCode}');
       rethrow;
     }
   }

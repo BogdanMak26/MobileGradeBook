@@ -3,13 +3,16 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/api/repositories.dart';
+import '../../../../core/auth/app_pin_service.dart';
 import '../../../../core/auth/auth_service.dart';
+import '../../../../core/auth/biometric_service.dart';
 import '../../../../core/mock/mock_data.dart';
 import '../../../../core/notifications/fcm_service.dart';
 import '../../../../core/utils/app_constants.dart';
@@ -30,6 +33,8 @@ class AuthState {
   final int? kafedraId;
   final int? groupId;
   final String? facultyName;
+  // true after fresh OAuth login when device has no security configured
+  final bool needsSecurityPrompt;
 
   const AuthState({
     this.status = AuthStatus.initial,
@@ -45,6 +50,7 @@ class AuthState {
     this.kafedraId,
     this.groupId,
     this.facultyName,
+    this.needsSecurityPrompt = false,
   });
 
   AuthState copyWith({
@@ -61,6 +67,7 @@ class AuthState {
     int? kafedraId,
     int? groupId,
     String? facultyName,
+    bool? needsSecurityPrompt,
   }) =>
       AuthState(
         status: status ?? this.status,
@@ -76,6 +83,7 @@ class AuthState {
         kafedraId: kafedraId ?? this.kafedraId,
         groupId: groupId ?? this.groupId,
         facultyName: facultyName ?? this.facultyName,
+        needsSecurityPrompt: needsSecurityPrompt ?? this.needsSecurityPrompt,
       );
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
@@ -144,7 +152,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
       );
 
       if (await canLaunchUrl(authUri)) {
-        await launchUrl(authUri, mode: LaunchMode.platformDefault);
+        await launchUrl(authUri, mode: LaunchMode.externalApplication);
       } else {
         throw Exception('Не вдалося відкрити браузер');
       }
@@ -169,8 +177,10 @@ class AuthViewModel extends StateNotifier<AuthState> {
       try {
         final userData = await _userRepo.getMe();
         _setUserFromData(userData);
+        // After fresh login — offer to set up device security if nothing is configured
+        checkAndPromptSecurity().ignore();
       } catch (e) {
-        print('[AUTH] getMe() failed: $e');
+        if (kDebugMode) print('[AUTH] getMe() failed: $e');
         final isCfBlock = e.toString().contains('CloudflareAccessBlocked');
         state = state.copyWith(
           status: AuthStatus.error,
@@ -245,6 +255,26 @@ class AuthViewModel extends StateNotifier<AuthState> {
     });
   }
 
+  // Called only after fresh OAuth login — checks if device has any security
+  // configured and prompts user to set one up if not.
+  // Uses isDeviceSupported() (KeyguardManager.isDeviceSecure) which returns true
+  // for ANY configured lock: PIN, pattern, password, or enrolled biometric.
+  // This correctly handles tablets where face recognition is not in BiometricManager
+  // but a device PIN is configured — canCheckBiometrics would return false there.
+  Future<void> checkAndPromptSecurity() async {
+    final bio = BiometricService();
+    final pin = AppPinService();
+    final isSecured = await bio.isDeviceSupported();
+    final hasPin = await pin.hasPin();
+    if (!isSecured && !hasPin) {
+      state = state.copyWith(needsSecurityPrompt: true);
+    }
+  }
+
+  void dismissSecurityPrompt() {
+    state = state.copyWith(needsSecurityPrompt: false);
+  }
+
   Future<void> logout() async {
     _fcmService.unsubscribeFromRoleTopic(state.role);
 
@@ -295,13 +325,13 @@ class AuthViewModel extends StateNotifier<AuthState> {
         return true;
       }
 
-      // dev fallback: mock login by saved role
-      if (savedRole != null) {
+      // dev fallback: mock login by saved role — тільки в debug-збірці
+      if (kDebugMode && savedRole != null) {
         mockLogin(savedRole);
         return true;
       }
     } catch (e) {
-      print('[AUTH] loginWithBiometric getMe() failed: $e');
+      if (kDebugMode) print('[AUTH] loginWithBiometric error: $e');
       final isCfBlock = e.toString().contains('CloudflareAccessBlocked');
       state = state.copyWith(
         status: AuthStatus.error,

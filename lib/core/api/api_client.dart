@@ -1,6 +1,7 @@
 // lib/core/api/api_client.dart
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_service.dart';
 import '../utils/app_constants.dart';
@@ -36,22 +37,18 @@ class _AuthInterceptor extends Interceptor {
     final token = await _authService.getValidAccessToken();
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
-      print('[API] ${options.method} ${options.uri} — token присутній');
+      if (kDebugMode) print('[API] ${options.method} ${options.uri} — token присутній');
     } else {
-      print('[API] ${options.method} ${options.uri} — ⚠️ токен відсутній!');
-    }
-    if (options.data != null) {
-      print('[API] REQUEST body: ${options.data}');
+      if (kDebugMode) print('[API] ${options.method} ${options.uri} — токен відсутній');
     }
     handler.next(options);
   }
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    print('[API] RESPONSE ${response.statusCode} ${response.requestOptions.uri}');
+    if (kDebugMode) print('[API] RESPONSE ${response.statusCode} ${response.requestOptions.uri}');
     final body = response.data;
     if (body is String && body.contains('Cloudflare Access')) {
-      print('[API] CF ACCESS BLOCK — отримано HTML замість JSON');
       handler.reject(DioException(
         requestOptions: response.requestOptions,
         response: response,
@@ -60,15 +57,12 @@ class _AuthInterceptor extends Interceptor {
       ));
       return;
     }
-    print('[API] RESPONSE body: $body');
     handler.next(response);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    print('[API] ERROR ${err.response?.statusCode} ${err.requestOptions.uri}');
-    print('[API] ERROR body: ${err.response?.data}');
-    print('[API] ERROR headers: ${err.response?.headers}');
+    if (kDebugMode) print('[API] ERROR ${err.response?.statusCode} ${err.requestOptions.uri}');
 
     if (err.response?.statusCode == 401 && !_isRefreshing) {
       _isRefreshing = true;
